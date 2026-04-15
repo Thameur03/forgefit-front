@@ -520,54 +520,52 @@ class TodayTabState extends State<TodayTab> {
   }
 
   Widget _buildNoProgramCard(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        // Switch to Library tab
-        widget.onShowComingSoon('Programs');
-      },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: OnboardingTheme.card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: OnboardingTheme.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: OnboardingTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: OnboardingTheme.border),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.bolt, color: Colors.white.withAlpha(40), size: 48),
+          const SizedBox(height: 16),
+          const Text(
+            'No Active Program',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Follow a structured plan to crush your goals.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white60, fontSize: 13),
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: () => widget.onShowComingSoon('Programs'),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: OnboardingTheme.accent.withAlpha(25),
-                borderRadius: BorderRadius.circular(12),
+                color: OnboardingTheme.accent,
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(Icons.fitness_center,
-                  color: OnboardingTheme.accent, size: 22),
-            ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'No active program',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    'Go to Library to activate a program',
-                    style: TextStyle(color: Colors.white60, fontSize: 12),
-                  ),
-                ],
+              child: const Text(
+                'Explore Programs',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-            const Icon(Icons.chevron_right, color: Colors.white38, size: 20),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -824,9 +822,19 @@ class TodayTabState extends State<TodayTab> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '$ago · ${WorkoutUtils.formatDuration(w.durationSeconds)} · $volStr',
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    '$ago · ${w.totalSets} sets · ${WorkoutUtils.formatDuration(w.durationSeconds)} · $volStr',
+                    style: const TextStyle(color: Colors.white60, fontSize: 12),
                   ),
+                  if (w.exercises.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      w.exercises.map((e) => e.name).take(3).join(' · ') + 
+                        (w.exercises.length > 3 ? ' · +${w.exercises.length - 3} more' : ''),
+                      style: const TextStyle(color: Colors.white38, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
               ),
             ),

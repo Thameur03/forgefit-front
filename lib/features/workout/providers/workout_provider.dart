@@ -512,7 +512,11 @@ class WorkoutProvider extends ChangeNotifier {
       _workouts = (response.data as List)
           .map((e) => WorkoutModel.fromJson(e))
           .toList()
-        ..sort((a, b) => b.date.compareTo(a.date));
+        ..sort((a, b) {
+          final dateCompare = b.date.compareTo(a.date);
+          if (dateCompare != 0) return dateCompare;
+          return b.id.compareTo(a.id);
+        });
     } catch (e) {
       if (e is DioException) {
         if (e.type == DioExceptionType.connectionError ||
