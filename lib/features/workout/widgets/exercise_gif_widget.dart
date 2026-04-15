@@ -69,7 +69,7 @@ class _ExerciseGifWidgetState extends State<ExerciseGifWidget> {
                   return const SizedBox.shrink();
                 },
                 errorBuilder: (context, error, stack) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                  Future.microtask(() {
                     if (mounted) setState(() { _loading = false; _error = true; });
                   });
                   return const SizedBox.shrink();
@@ -88,15 +88,20 @@ class _ExerciseGifWidgetState extends State<ExerciseGifWidget> {
   }
 
   Widget _buildFallback() {
+    final bool isSmall = widget.height <= 80;
+    final double iconSize = isSmall ? widget.height * 0.5 : 48;
     return SizedBox(
       width: widget.width,
       height: widget.height,
-      child: const Column(
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.fitness_center, color: Colors.white24, size: 48),
-          SizedBox(height: 8),
-          Text('Preview unavailable', style: TextStyle(color: Colors.white24, fontSize: 12)),
+          Icon(Icons.fitness_center, color: Colors.white24, size: iconSize),
+          if (!isSmall) ...[
+            const SizedBox(height: 8),
+            const Text('Preview unavailable', style: TextStyle(color: Colors.white24, fontSize: 12)),
+          ],
         ],
       ),
     );

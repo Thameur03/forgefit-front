@@ -169,14 +169,29 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen>
           _titleController.text = title;
           _provider.setWorkoutInProgress(true, title: title, workoutId: id);
 
-          for (final ex in day.exercises) {
-            _provider.addExercise(ex.exerciseName);
-            // Pre-fill sets based on the program's target
+          // Add all exercises WITHOUT the auto-expand-last side effect.
+          // We manually control which one is expanded (first only).
+          for (int i = 0; i < day.exercises.length; i++) {
+            final ex = day.exercises[i];
+            // Collapse all existing before adding, then expand only index 0.
+            for (final active in _provider.activeExercises) {
+              active.isExpanded = false;
+            }
+            _provider.activeExercises.add(ActiveExercise(
+              name: ex.exerciseName,
+              isExpanded: i == 0, // only first is expanded
+            ));
+            // Add extra sets beyond the default 3
             final addedIndex = _provider.activeExercises.length - 1;
-            for (int i = 1; i < ex.sets; i++) {
+            for (int s = 1; s < ex.sets; s++) {
               _provider.addSet(addedIndex);
             }
           }
+          // Notify once after all exercises are added
+          _provider.broadcast();
+
+          // Trigger GIF + muscle enrichment in background
+          _provider.enrichExercisesInBackground();
         }
       }
     } catch (e) {
@@ -893,28 +908,26 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  if (exercise.gifUrl.isNotEmpty) ...[
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ExerciseDetailScreen(
-                              exercise: exercise.exerciseResult,
-                              fallbackName: exercise.name,
-                            ),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ExerciseDetailScreen(
+                            exercise: exercise.exerciseResult,
+                            fallbackName: exercise.name,
                           ),
-                        );
-                      },
-                      child: ExerciseGifWidget(
-                        gifUrl: exercise.gifUrl,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                      ),
+                        ),
+                      );
+                    },
+                    child: ExerciseGifWidget(
+                      gifUrl: exercise.gifUrl,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
                     ),
-                    const SizedBox(width: 12),
-                  ],
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -982,16 +995,22 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen>
                   GestureDetector(
                     onTap: () => _showRestTimeOptions(context, exIndex, exercise),
                     behavior: HitTestBehavior.opaque,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.timer_outlined, color: Colors.white60, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          _formatRestTime(exercise.restSeconds),
-                          style: const TextStyle(color: Colors.white60, fontSize: 12),
-                        ),
-                      ],
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 56),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.timer_outlined, color: Colors.white60, size: 14),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              _formatRestTime(exercise.restSeconds),
+                              style: const TextStyle(color: Colors.white60, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),

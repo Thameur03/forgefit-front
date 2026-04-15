@@ -263,6 +263,18 @@ class WorkoutProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Call this after adding a batch of exercises (e.g. from a program day)
+  /// to fetch their GIFs and muscle data asynchronously.
+  void enrichExercisesInBackground() {
+    final names = _activeExercises.map((e) => e.name).toList();
+    if (names.isEmpty) return;
+    _enrichExercisesWithGifs(names);
+  }
+
+  /// Public wrapper around [notifyListeners] for use by screen-level callers
+  /// that need to trigger a single rebuild after manually mutating state.
+  void broadcast() => notifyListeners();
+
   void addSet(int exerciseIndex) {
     if (exerciseIndex < 0 || exerciseIndex >= _activeExercises.length) return;
     final exercise = _activeExercises[exerciseIndex];
@@ -418,10 +430,15 @@ class WorkoutProvider extends ChangeNotifier {
             _activeExercises[idx].targetMuscle =
                 result.targetMuscles.isNotEmpty ? result.targetMuscles.first : '—';
             _activeExercises[idx].exerciseResult = result;
-            notifyListeners();
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              notifyListeners();
+            });
           }
         }
-      } catch (_) {}
+      } catch (e, stack) {
+        debugPrint('[ForgeFit] GIF enrichment failed: $e');
+        debugPrint('[ForgeFit] Stack: $stack');
+      }
     }
   }
 
