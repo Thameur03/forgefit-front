@@ -64,32 +64,21 @@ class _ProfileSummaryScreenState extends State<ProfileSummaryScreen>
     if (success) {
       setState(() => _success = true);
 
-      // Save credentials before reset
+      // Save email before reset
       final email = op.email;
-      final password = op.password;
       op.reset();
 
       // Short delay to show checkmark
       await Future.delayed(const Duration(milliseconds: 800));
       if (!mounted) return;
 
-      // Auto-login
-      final loginSuccess = await auth.login(email, password);
-      if (!mounted) return;
-
-      if (loginSuccess) {
-        Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false);
-      } else {
-        // Fallback to login screen
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created! Please log in.'),
-            backgroundColor: OnboardingTheme.accent,
-            duration: Duration(seconds: 3),
-          ),
-        );
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (r) => false);
-      }
+      // Navigate to email verification screen
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/verify-email',
+        (r) => false,
+        arguments: email,
+      );
     }
   }
 

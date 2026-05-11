@@ -94,8 +94,6 @@ class _WorkoutListScreenState extends State<WorkoutListScreen>
                     ),
                   ),
                   const Spacer(),
-                  _iconButton(Icons.search, () => _showComingSoon('Search')),
-                  const SizedBox(width: 4),
                   _iconButton(Icons.calendar_month, () {
                     Navigator.push(
                       context,
@@ -193,6 +191,13 @@ class _WorkoutListScreenState extends State<WorkoutListScreen>
         return TodayTab(
           onShowComingSoon: _showComingSoon,
           onSwitchToHistory: () => _switchTab(2),
+          onViewPrograms: () {
+            _switchTab(1);
+            // Delay slightly to let the tab transition start/finish gracefully
+            Future.delayed(const Duration(milliseconds: 250), () {
+              if (mounted) _showCreateModal();
+            });
+          },
         );
       case 1:
         return LibraryTab(onShowComingSoon: _showComingSoon);
@@ -230,16 +235,24 @@ class _WorkoutListScreenState extends State<WorkoutListScreen>
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (ctx) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: OnboardingTheme.bg,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+        final bottomInset = MediaQuery.of(ctx).viewPadding.bottom;
+        return SingleChildScrollView(
+          child: Container(
+            decoration: const BoxDecoration(
+              color: OnboardingTheme.bg,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              12,
+              20,
+              (bottomInset > 0 ? bottomInset : 16) + 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               // Handle
               Container(
                 width: 40,
@@ -306,10 +319,11 @@ class _WorkoutListScreenState extends State<WorkoutListScreen>
               ),
             ],
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _createModalOption(
     BuildContext ctx, {
@@ -379,13 +393,16 @@ class _WorkoutListScreenState extends State<WorkoutListScreen>
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (ctx) {
+        final bottomInset = MediaQuery.of(ctx).viewPadding.bottom;
         return Container(
           height: MediaQuery.of(context).size.height * 0.7,
           decoration: const BoxDecoration(
             color: OnboardingTheme.bg,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
+          padding: EdgeInsets.only(bottom: bottomInset > 0 ? bottomInset : 0),
           child: Column(
             children: [
               const SizedBox(height: 12),

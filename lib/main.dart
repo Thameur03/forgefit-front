@@ -10,6 +10,7 @@ import 'core/storage/token_storage.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/workout/providers/workout_provider.dart';
 import 'features/workout/providers/program_provider.dart';
+import 'features/workout/providers/schedule_provider.dart';
 import 'features/nutrition/providers/nutrition_provider.dart';
 import 'features/progress/providers/stats_provider.dart';
 import 'features/auth/providers/onboarding_provider.dart';
@@ -30,7 +31,12 @@ import 'features/auth/screens/email_password_screen.dart';
 import 'features/auth/screens/profile_summary_screen.dart';
 import 'features/auth/screens/physical_metrics_screen.dart';
 import 'features/auth/screens/fitness_level_screen.dart';
+import 'features/auth/screens/email_verification_screen.dart';
+import 'features/auth/screens/forgot_password_screen.dart';
+import 'features/auth/screens/reset_password_screen.dart';
 import 'features/auth/widgets/onboarding_widgets.dart';
+import 'features/profile/screens/edit_profile_screen.dart';
+import 'features/profile/screens/statistics_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -85,6 +91,9 @@ class ForgeFitApp extends StatelessWidget {
           create: (_) => ProgramProvider(apiClient: apiClient),
         ),
         ChangeNotifierProvider(
+          create: (_) => ScheduleProvider(apiClient: apiClient),
+        ),
+        ChangeNotifierProvider(
           create: (_) => NutritionProvider(apiClient: apiClient),
         ),
         ChangeNotifierProvider(
@@ -92,7 +101,7 @@ class ForgeFitApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'ForgeFit',
+        title: 'AthleteLab',
         debugShowCheckedModeBanner: false,
         theme: _buildDarkFitnessTheme(),
         initialRoute: initialRoute,
@@ -107,6 +116,8 @@ class ForgeFitApp extends StatelessWidget {
                   value: context.read<WorkoutProvider>()),
               ChangeNotifierProvider.value(
                   value: context.read<ProgramProvider>()),
+              ChangeNotifierProvider.value(
+                  value: context.read<ScheduleProvider>()),
               ChangeNotifierProvider.value(
                   value: context.read<NutritionProvider>()),
               ChangeNotifierProvider.value(
@@ -213,6 +224,14 @@ class ForgeFitApp extends StatelessWidget {
         return buildSlideRoute(const FitnessLevelScreen());
       case '/profile-summary':
         return buildSlideRoute(const ProfileSummaryScreen());
+      case '/verify-email':
+        final email = settings.arguments as String? ?? '';
+        return buildSlideRoute(EmailVerificationScreen(email: email));
+      case '/forgot-password':
+        return buildSlideRoute(const ForgotPasswordScreen());
+      case '/reset-password':
+        final email = settings.arguments as String? ?? '';
+        return buildSlideRoute(ResetPasswordScreen(email: email));
       case '/home':
         return MaterialPageRoute(builder: (_) => const HomeScreen());
       case '/log-workout':
@@ -245,6 +264,12 @@ class ForgeFitApp extends StatelessWidget {
         return MaterialPageRoute(
           builder: (_) => const BarcodeScannerScreen(),
         );
+      case '/profile/statistics':
+        return MaterialPageRoute(
+          builder: (_) => const StatisticsScreen(),
+        );
+      case '/profile/edit':
+        return buildSlideRoute(const EditProfileScreen());
       case '/nutrition/micronutrients':
         return MaterialPageRoute(
           builder: (_) => const MicronutrientDashboardScreen(),

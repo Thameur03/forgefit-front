@@ -237,6 +237,7 @@ class ExerciseSearchSheetState extends State<ExerciseSearchSheet> {
                           final exercise = _results[i];
 
                           return InkWell(
+                            key: ValueKey(exercise.id),
                             onTap: () {
                               if (widget.replaceIndex != null) {
                                 widget.provider.replaceExercise(

@@ -8,6 +8,8 @@ class UserModel {
   final double? weightKg;
   final double? heightCm;
   final String? fitnessLevel;
+  final String role;
+  final bool isVerified;
 
   UserModel({
     required this.id,
@@ -19,6 +21,8 @@ class UserModel {
     this.weightKg,
     this.heightCm,
     this.fitnessLevel,
+    this.role = 'user',
+    this.isVerified = false,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -36,6 +40,8 @@ class UserModel {
       weightKg: (json['weight_kg'] as num?)?.toDouble(),
       heightCm: (json['height_cm'] as num?)?.toDouble(),
       fitnessLevel: json['fitness_level'],
+      role: json['role'] ?? 'user',
+      isVerified: json['is_verified'] ?? false,
     );
   }
 
@@ -50,6 +56,10 @@ class UserModel {
       if (weightKg != null) 'weight_kg': weightKg,
       if (heightCm != null) 'height_cm': heightCm,
       if (fitnessLevel != null) 'fitness_level': fitnessLevel,
+      'role': role,
+      'is_verified': isVerified,
     };
   }
+
+  bool get isAdmin => role == 'admin';
 }

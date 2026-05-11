@@ -10,6 +10,11 @@ class ApiConstants {
   static const String me = '/auth/me';
   static const String logout = '/auth/logout';
   static const String refreshToken = '/auth/refresh';
+  static const String authProfile = '/auth/profile';
+  static const String verifyEmail = '/auth/verify-email';
+  static const String resendVerificationCode = '/auth/resend-verification-code';
+  static const String forgotPassword = '/auth/forgot-password';
+  static const String resetPassword = '/auth/reset-password';
 
   // Workouts
   static const String workouts = '/workouts/';
@@ -35,9 +40,15 @@ class ApiConstants {
   static const String statsPersonalRecords = '/stats/personal-records';
   static const String statsWeeklyVolume = '/stats/weekly-volume';
   static const String statsNutritionTrend = '/stats/nutrition-trend';
+  static const String statsMuscleVolume = '/stats/muscle-volume';
 
   // Programs
   static const String programTemplates = '/programs/templates';
   static const String programs = '/programs/';
   static const String programsActive = '/programs/active';
+
+  // Schedule
+  static const String schedule = '/schedule/';
+  static const String scheduleToday = '/schedule/today';
+  static const String scheduleMonth = '/schedule/month';
 }

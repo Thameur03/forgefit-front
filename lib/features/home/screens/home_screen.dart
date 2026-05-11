@@ -6,21 +6,12 @@ import '../../nutrition/providers/nutrition_provider.dart';
 import '../../progress/providers/stats_provider.dart';
 import '../../workout/screens/workout_list_screen.dart';
 import '../../nutrition/screens/nutrition_screen.dart';
+import '../../profile/screens/profile_screen.dart';
+
 import '../widgets/greeting_header.dart';
 import '../widgets/today_summary_card.dart';
 import '../widgets/todays_focus_card.dart';
 import '../widgets/nutrition_snapshot_widget.dart';
-
-// Placeholder widgets until other features are built
-class _PlaceholderScreen extends StatelessWidget {
-  final String title;
-  const _PlaceholderScreen(this.title);
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(child: Text(title));
-  }
-}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -34,13 +25,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onItemTapped(int index) {
     setState(() {
-      _selectedIndex = index;
+      _selectedIndex = index.clamp(0, 3);
     });
   }
 
   void _switchToTab(int index) {
     setState(() {
-      _selectedIndex = index;
+      _selectedIndex = index.clamp(0, 3);
     });
   }
 
@@ -50,15 +41,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _HomeTab(onSwitchTab: _switchToTab),
       const WorkoutListScreen(),
       const NutritionScreen(),
-      const _PlaceholderScreen('Profile Tab'),
+      const ProfileScreen(),
     ];
+
+    // Guard: clamp in case stale state holds an out-of-range index
+    final safeIndex = _selectedIndex.clamp(0, screens.length - 1);
 
     return Scaffold(
       backgroundColor: OnboardingTheme.bg,
       body: SafeArea(
         bottom: false,
         child: IndexedStack(
-          index: _selectedIndex,
+          index: safeIndex,
           children: screens,
         ),
       ),
@@ -75,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           top: false,
           child: BottomNavigationBar(
-            currentIndex: _selectedIndex,
+            currentIndex: safeIndex,
             onTap: _onItemTapped,
             backgroundColor: OnboardingTheme.card,
             selectedItemColor: OnboardingTheme.accent,

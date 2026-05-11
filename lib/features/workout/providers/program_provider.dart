@@ -159,7 +159,7 @@ class ProgramProvider extends ChangeNotifier {
       _activeProgram = ProgramModel.fromJson(response.data);
       _isFromCache = false;
       notifyListeners();
-      // Cache the active program
+      // Cache the active program for offline fallback
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(
@@ -169,8 +169,23 @@ class ProgramProvider extends ChangeNotifier {
       } catch (_) {
         // Cache write failure is non-critical
       }
-    } catch (_) {
-      // API failed — attempt to load from cache
+    } catch (e) {
+      // Check if it's a 404 "No active program" response — that is a valid
+      // empty state, NOT an offline/cache situation.
+      final errorStr = e.toString();
+      final is404 = errorStr.contains('404') ||
+          errorStr.contains('No active program') ||
+          errorStr.contains('not found');
+
+      if (is404) {
+        // Normal empty state: user simply has no active program yet.
+        _activeProgram = null;
+        _isFromCache = false;
+        notifyListeners();
+        return;
+      }
+
+      // Real network / server error — try loading from local cache.
       try {
         final prefs = await SharedPreferences.getInstance();
         final cached = prefs.getString('cached_active_program');

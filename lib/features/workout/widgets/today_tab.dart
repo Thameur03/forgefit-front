@@ -6,7 +6,9 @@ import '../../auth/widgets/onboarding_widgets.dart';
 import '../models/program_model.dart';
 import '../providers/workout_provider.dart';
 import '../providers/program_provider.dart';
+import '../providers/schedule_provider.dart';
 import '../models/workout_model.dart';
+import '../models/scheduled_workout_model.dart';
 import '../screens/program_detail_screen.dart';
 import '../screens/log_workout_screen.dart';
 import '../screens/workout_detail_screen.dart';
@@ -14,11 +16,13 @@ import '../screens/workout_detail_screen.dart';
 class TodayTab extends StatefulWidget {
   final void Function(String) onShowComingSoon;
   final VoidCallback onSwitchToHistory;
+  final VoidCallback onViewPrograms;
 
   const TodayTab({
     super.key,
     required this.onShowComingSoon,
     required this.onSwitchToHistory,
+    required this.onViewPrograms,
   });
 
   @override
@@ -36,13 +40,15 @@ class TodayTabState extends State<TodayTab> {
       print('=== Calling loadWorkouts() from _TodayTabState ===');
       context.read<WorkoutProvider>().loadWorkouts();
       context.read<ProgramProvider>().loadActiveProgram();
+      context.read<ScheduleProvider>().loadToday();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<WorkoutProvider>(
-      builder: (context, provider, _) {
+    return Consumer2<WorkoutProvider, ScheduleProvider>(
+      builder: (context, provider, scheduleProvider, _) {
+        final scheduled = scheduleProvider.todayScheduled;
         return SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Column(
@@ -51,6 +57,12 @@ class TodayTabState extends State<TodayTab> {
               // In Progress Card
               if (provider.isWorkoutInProgress) ...[
                 _buildInProgressCard(context, provider),
+                const SizedBox(height: 24),
+              ],
+
+              // Today's Scheduled Workout card (if any)
+              if (scheduled != null) ...[
+                _buildScheduledCard(context, scheduled),
                 const SizedBox(height: 24),
               ],
 
@@ -69,6 +81,103 @@ class TodayTabState extends State<TodayTab> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildScheduledCard(BuildContext context, ScheduledWorkoutModel sw) {
+    final exerciseNames = sw.exercises.take(3).map((e) => e.exerciseName).toList();
+    final remaining = sw.exercises.length - 3;
+    final preview = exerciseNames.isEmpty
+        ? 'No exercises'
+        : remaining > 0
+            ? '${exerciseNames.join(' · ')} +$remaining more'
+            : exerciseNames.join(' · ');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            OnboardingTheme.accent.withAlpha(40),
+            OnboardingTheme.accent.withAlpha(15),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: OnboardingTheme.accent.withAlpha(80)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.event_available_rounded,
+                  color: OnboardingTheme.accent, size: 16),
+              const SizedBox(width: 6),
+              const Text(
+                'Today\'s Workout',
+                style: TextStyle(
+                  color: OnboardingTheme.accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            sw.dayName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'From: ${sw.programName}',
+            style: const TextStyle(color: Colors.white60, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            preview,
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => LogWorkoutScreen(
+                      programDay: sw.toProgramDayModel(),
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: OnboardingTheme.accent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              icon: const Icon(Icons.play_arrow_rounded, size: 18),
+              label: const Text(
+                'Start Workout',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -520,52 +629,78 @@ class TodayTabState extends State<TodayTab> {
   }
 
   Widget _buildNoProgramCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: OnboardingTheme.card,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: OnboardingTheme.border),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.bolt, color: Colors.white.withAlpha(40), size: 48),
-          const SizedBox(height: 16),
-          const Text(
-            'No Active Program',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+        onTap: () => widget.onViewPrograms(),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: OnboardingTheme.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: OnboardingTheme.border),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Follow a structured plan to crush your goals.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white60, fontSize: 13),
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: () => widget.onShowComingSoon('Programs'),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: BoxDecoration(
-                color: OnboardingTheme.accent,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'Explore Programs',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: OnboardingTheme.accent.withAlpha(25),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.calendar_today_rounded,
+                  color: OnboardingTheme.accent,
+                  size: 26,
                 ),
               ),
-            ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Let's add a program",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Choose a template or create your own training plan',
+                      style: TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: OnboardingTheme.accent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'View Programs',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

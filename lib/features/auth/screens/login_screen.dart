@@ -36,8 +36,18 @@ class _LoginScreenState extends State<LoginScreen> {
       _passwordController.text,
     );
 
-    if (success && mounted) {
+    if (!mounted) return;
+
+    if (success) {
       Navigator.pushReplacementNamed(context, '/home');
+    } else if (authProvider.errorMessage != null &&
+        authProvider.errorMessage!.contains('verify your email')) {
+      // Redirect to verification screen
+      Navigator.pushNamed(
+        context,
+        '/verify-email',
+        arguments: _emailController.text.trim(),
+      );
     }
   }
 
@@ -73,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 18),
 
-                // ── FORGEFIT title ────────────────────────────────────────
+                // ── ATHLETELAB title ──────────────────────────────────────
                 RichText(
                   textAlign: TextAlign.center,
                   text: const TextSpan(
@@ -84,11 +94,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     children: [
                       TextSpan(
-                        text: 'FORGE',
+                        text: 'ATHLETE',
                         style: TextStyle(color: Colors.white),
                       ),
                       TextSpan(
-                        text: 'FIT',
+                        text: 'LAB',
                         style: TextStyle(color: OnboardingTheme.gradientStart),
                       ),
                     ],
@@ -179,7 +189,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {},
+                    onPressed: () =>
+                        Navigator.pushNamed(context, '/forgot-password'),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       minimumSize: Size.zero,
@@ -244,41 +255,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 28),
 
-                // ── OR CONTINUE WITH divider ──────────────────────────────
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Divider(color: Colors.white12, thickness: 1),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'OR CONTINUE WITH',
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(90),
-                          fontSize: 11,
-                          letterSpacing: 1.4,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const Expanded(
-                      child: Divider(color: Colors.white12, thickness: 1),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
 
-                // ── Social buttons row ────────────────────────────────────
-                Row(
-                  children: [
-                    Expanded(child: _SocialButton(label: 'Google', icon: _googleIcon())),
-                    const SizedBox(width: 14),
-                    Expanded(child: _SocialButton(label: 'Apple', icon: _appleIcon())),
-                  ],
-                ),
                 const SizedBox(height: 28),
 
                 // ── Sign Up link ──────────────────────────────────────────
@@ -358,41 +336,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _googleIcon() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Coloured G using text spans
-        RichText(
-          text: const TextSpan(
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            children: [
-              TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        const Text(
-          'Google',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-      ],
-    );
-  }
 
-  Widget _appleIcon() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.apple, color: Colors.white, size: 20),
-        const SizedBox(width: 8),
-        const Text(
-          'Apple',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-      ],
-    );
-  }
 }
 
 // ── Daily Challenge Card ─────────────────────────────────────────────────────
@@ -475,26 +419,4 @@ class _DailyChallengeCard extends StatelessWidget {
   }
 }
 
-// ── Social Button ────────────────────────────────────────────────────────────
-class _SocialButton extends StatelessWidget {
-  final String label;
-  final Widget icon;
 
-  const _SocialButton({required this.label, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: () {},
-      style: OutlinedButton.styleFrom(
-        backgroundColor: OnboardingTheme.cardAlt,
-        side: const BorderSide(color: Colors.white12),
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-      child: icon,
-    );
-  }
-}

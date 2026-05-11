@@ -40,6 +40,28 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Extract a human-readable error message from a DioException.
+  String _extractError(DioException e) {
+    final data = e.response?.data;
+    if (data is Map && data['detail'] != null) {
+      final detail = data['detail'];
+      if (detail is List && detail.isNotEmpty) {
+        return detail.map((d) => d['msg'] ?? d.toString()).join(', ');
+      }
+      return detail.toString();
+    }
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.sendTimeout) {
+      return 'Connection timed out. Check your internet and try again.';
+    }
+    return 'Something went wrong. Please try again.';
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // LOGIN
+  // ═══════════════════════════════════════════════════════════
+
   Future<bool> login(String email, String password) async {
     _setLoading(true);
     _setError(null);
@@ -61,12 +83,25 @@ class AuthProvider extends ChangeNotifier {
       await getCurrentUser();
       _setLoading(false);
       return true;
+    } on DioException catch (e) {
+      // Special handling for 403 (unverified email)
+      if (e.response?.statusCode == 403) {
+        _setError(e.response?.data?['detail'] ?? 'Please verify your email before logging in.');
+      } else {
+        _setError(_extractError(e));
+      }
+      _setLoading(false);
+      return false;
     } catch (e) {
       _setError(e.toString());
       _setLoading(false);
       return false;
     }
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // REGISTER
+  // ═══════════════════════════════════════════════════════════
 
   Future<bool> register({
     required String email,
@@ -90,14 +125,10 @@ class AuthProvider extends ChangeNotifier {
       'full_name': fullName,
       if (dateOfBirth != null)
         'date_of_birth': dateOfBirth.toIso8601String().split('T')[0],
-      if (gender != null)
-        'gender': gender.toLowerCase(),
-      if (weightKg != null)
-        'weight_kg': weightKg,
-      if (heightCm != null)
-        'height_cm': heightCm,
-      if (fitnessLevel != null)
-        'fitness_level': fitnessLevel.toLowerCase(),
+      if (gender != null) 'gender': gender.toLowerCase(),
+      if (weightKg != null) 'weight_kg': weightKg,
+      if (heightCm != null) 'height_cm': heightCm,
+      if (fitnessLevel != null) 'fitness_level': fitnessLevel.toLowerCase(),
     };
 
     int attempts = 0;
@@ -129,20 +160,12 @@ class AuthProvider extends ChangeNotifier {
           _setError('Connection timed out. Check your internet and try again.');
         } else if (e.response?.statusCode == 422) {
           _setError('Please check your information and try again.');
-        } else if (e.response?.statusCode == 409 || e.response?.statusCode == 400) {
-          _setError('Account may already exist. Please try logging in with your email.');
+        } else if (e.response?.statusCode == 409 ||
+            e.response?.statusCode == 400) {
+          _setError(
+              'Account may already exist. Please try logging in with your email.');
         } else {
-          final data = e.response?.data;
-          if (data is Map && data['detail'] != null) {
-            final detail = data['detail'];
-            if (detail is List && detail.isNotEmpty) {
-              _setError(detail.map((d) => d['msg'] ?? d.toString()).join(', '));
-            } else {
-              _setError(detail.toString());
-            }
-          } else {
-            _setError(e.toString());
-          }
+          _setError(_extractError(e));
         }
         _setLoading(false);
         return false;
@@ -156,6 +179,107 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(false);
     return false;
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // EMAIL VERIFICATION
+  // ═══════════════════════════════════════════════════════════
+
+  Future<bool> verifyEmail(String email, String code) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      await _apiClient.post(
+        ApiConstants.verifyEmail,
+        data: {'email': email, 'code': code},
+      );
+      _setLoading(false);
+      return true;
+    } on DioException catch (e) {
+      _setError(_extractError(e));
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError(e.toString());
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> resendVerificationCode(String email) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      await _apiClient.post(
+        ApiConstants.resendVerificationCode,
+        data: {'email': email},
+      );
+      _setLoading(false);
+      return true;
+    } on DioException catch (e) {
+      _setError(_extractError(e));
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError(e.toString());
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // PASSWORD RECOVERY
+  // ═══════════════════════════════════════════════════════════
+
+  Future<bool> forgotPassword(String email) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      await _apiClient.post(
+        ApiConstants.forgotPassword,
+        data: {'email': email},
+      );
+      _setLoading(false);
+      return true;
+    } on DioException catch (e) {
+      _setError(_extractError(e));
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError(e.toString());
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> resetPassword(
+      String email, String code, String newPassword) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      await _apiClient.post(
+        ApiConstants.resetPassword,
+        data: {
+          'email': email,
+          'code': code,
+          'new_password': newPassword,
+        },
+      );
+      _setLoading(false);
+      return true;
+    } on DioException catch (e) {
+      _setError(_extractError(e));
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError(e.toString());
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // USER SESSION
+  // ═══════════════════════════════════════════════════════════
 
   Future<void> getCurrentUser() async {
     try {

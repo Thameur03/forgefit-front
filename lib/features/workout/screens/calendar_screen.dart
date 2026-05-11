@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../auth/widgets/onboarding_widgets.dart';
 import '../providers/workout_provider.dart';
+import '../providers/schedule_provider.dart';
 import '../models/workout_model.dart';
+import '../widgets/schedule_workout_sheet.dart';
 import 'workout_detail_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -22,10 +24,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     super.initState();
     _displayedMonth = DateTime(DateTime.now().year, DateTime.now().month);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<WorkoutProvider>();
-      if (provider.workouts.isEmpty) {
-        provider.loadWorkouts();
+      final workoutProvider = context.read<WorkoutProvider>();
+      if (workoutProvider.workouts.isEmpty) {
+        workoutProvider.loadWorkouts();
       }
+      context.read<ScheduleProvider>().loadMonth(_displayedMonth);
     });
   }
 
@@ -35,6 +38,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           DateTime(_displayedMonth.year, _displayedMonth.month - 1);
       _selectedDay = null;
     });
+    context.read<ScheduleProvider>().loadMonth(_displayedMonth);
   }
 
   void _nextMonth() {
@@ -43,6 +47,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           DateTime(_displayedMonth.year, _displayedMonth.month + 1);
       _selectedDay = null;
     });
+    context.read<ScheduleProvider>().loadMonth(_displayedMonth);
   }
 
   @override
@@ -50,9 +55,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Scaffold(
       backgroundColor: OnboardingTheme.bg,
       body: SafeArea(
-        child: Consumer<WorkoutProvider>(
-          builder: (context, provider, _) {
+        child: Consumer2<WorkoutProvider, ScheduleProvider>(
+          builder: (context, provider, scheduleProvider, _) {
             final workoutDates = provider.getWorkoutDates();
+            final scheduledDates = scheduleProvider.scheduledByDate;
             final monthWorkouts =
                 provider.getWorkoutsForMonth(_displayedMonth);
             final volume =
@@ -72,7 +78,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _buildCalendarGrid(workoutDates),
+                    child: _buildCalendarGrid(workoutDates, scheduledDates),
                   ),
                 ),
               ],
@@ -165,7 +171,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildCalendarGrid(Set<DateTime> workoutDates) {
+  Widget _buildCalendarGrid(
+    Set<DateTime> workoutDates,
+    Map<DateTime, dynamic> scheduledDates,
+  ) {
     final year = _displayedMonth.year;
     final month = _displayedMonth.month;
     final firstDay = DateTime(year, month, 1);
@@ -211,6 +220,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           month: month,
           todayDate: todayDate,
           workoutDates: workoutDates,
+          scheduledDates: scheduledDates,
         ),
       ],
     );
@@ -224,6 +234,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required int month,
     required DateTime todayDate,
     required Set<DateTime> workoutDates,
+    required Map<DateTime, dynamic> scheduledDates,
   }) {
     final weeks = <Widget>[];
     int dayCounter = 1;
@@ -244,12 +255,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
             isToday: false,
             isSelected: false,
             hasWorkout: false,
+            hasScheduled: false,
             onTap: null,
+            onLongPress: null,
           ));
         } else if (dayCounter <= daysInMonth) {
           final currentDay = dayCounter;
           final date = DateTime(year, month, currentDay);
           final hasWorkout = workoutDates.contains(date);
+          final hasScheduled = scheduledDates.containsKey(date);
           final isToday = date == todayDate;
           final isSelected = _selectedDay != null &&
               _selectedDay!.year == date.year &&
@@ -262,7 +276,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             isToday: isToday,
             isSelected: isSelected,
             hasWorkout: hasWorkout,
+            hasScheduled: hasScheduled,
             onTap: () => _onDayTapped(date, hasWorkout),
+            onLongPress: () => _showScheduleSheet(date),
           ));
           dayCounter++;
         } else {
@@ -273,7 +289,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             isToday: false,
             isSelected: false,
             hasWorkout: false,
+            hasScheduled: false,
             onTap: null,
+            onLongPress: null,
           ));
           nextMonthDay++;
         }
@@ -294,7 +312,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required bool isToday,
     required bool isSelected,
     required bool hasWorkout,
+    bool hasScheduled = false,
     VoidCallback? onTap,
+    VoidCallback? onLongPress,
   }) {
     Color textColor;
     Color bgColor = Colors.transparent;
@@ -318,6 +338,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           height: 44,
@@ -356,12 +377,37 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     shape: BoxShape.circle,
                   ),
                 )
+              else if (hasScheduled && !isSelected)
+                Container(
+                  width: 4,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 2),
+                  child: Transform.rotate(
+                    angle: 0.785,  // 45 degrees = diamond shape
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withAlpha(200),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                  ),
+                )
               else
                 const SizedBox(height: 6),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  void _showScheduleSheet(DateTime date) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ScheduleWorkoutSheet(selectedDate: date),
     );
   }
 
