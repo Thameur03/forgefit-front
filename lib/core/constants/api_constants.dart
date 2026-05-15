@@ -32,6 +32,10 @@ class ApiConstants {
   // Food
   static const String foodSearch = '/food/search';
   static const String foodNutrients = '/food/';
+  static const String foodFilters = '/food/filters';
+
+  // Nutrition Stats
+  static const String nutritionDashboardStats = '/stats/nutrition-dashboard';
 
 
   // Stats
@@ -44,6 +48,8 @@ class ApiConstants {
 
   // Programs
   static const String programTemplates = '/programs/templates';
+  static const String programGlobalTemplates = '/programs/global-templates';
+  static const String programFromDbTemplate = '/programs/from-db-template/';
   static const String programs = '/programs/';
   static const String programsActive = '/programs/active';
 
@@ -51,4 +57,7 @@ class ApiConstants {
   static const String schedule = '/schedule/';
   static const String scheduleToday = '/schedule/today';
   static const String scheduleMonth = '/schedule/month';
+
+  // AI Coach
+  static const String aiCoachSummary = '/ai/coach-summary';
 }

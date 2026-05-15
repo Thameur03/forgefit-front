@@ -12,7 +12,10 @@ import 'features/workout/providers/workout_provider.dart';
 import 'features/workout/providers/program_provider.dart';
 import 'features/workout/providers/schedule_provider.dart';
 import 'features/nutrition/providers/nutrition_provider.dart';
+import 'features/nutrition/providers/nutrition_stats_provider.dart';
 import 'features/progress/providers/stats_provider.dart';
+import 'features/progress/providers/progress_provider.dart';
+import 'features/progress/providers/ai_coach_provider.dart';
 import 'features/auth/providers/onboarding_provider.dart';
 
 // Screens
@@ -25,6 +28,7 @@ import 'features/nutrition/screens/food_detail_screen.dart';
 import 'features/nutrition/screens/macro_targets_screen.dart';
 import 'features/nutrition/screens/barcode_scanner_screen.dart';
 import 'features/nutrition/screens/micronutrient_dashboard_screen.dart';
+import 'features/progress/screens/progress_analytics_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/register_screen.dart';
 import 'features/auth/screens/email_password_screen.dart';
@@ -97,7 +101,16 @@ class ForgeFitApp extends StatelessWidget {
           create: (_) => NutritionProvider(apiClient: apiClient),
         ),
         ChangeNotifierProvider(
+          create: (_) => NutritionStatsProvider(apiClient: apiClient),
+        ),
+        ChangeNotifierProvider(
           create: (_) => StatsProvider(apiClient: apiClient),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ProgressProvider(apiClient: apiClient),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AICoachProvider(apiClient: apiClient),
         ),
       ],
       child: MaterialApp(
@@ -123,7 +136,11 @@ class ForgeFitApp extends StatelessWidget {
               ChangeNotifierProvider.value(
                   value: context.read<StatsProvider>()),
               ChangeNotifierProvider.value(
+                  value: context.read<ProgressProvider>()),
+              ChangeNotifierProvider.value(
                   value: context.read<OnboardingProvider>()),
+              ChangeNotifierProvider.value(
+                  value: context.read<AICoachProvider>()),
             ],
             child: child!,
           );
@@ -252,8 +269,9 @@ class ForgeFitApp extends StatelessWidget {
         final args = settings.arguments as Map<String, dynamic>;
         return MaterialPageRoute(
           builder: (_) => FoodDetailScreen(
-            foodData: args['foodData'] as Map<String, dynamic>,
-            targetMeal: args['targetMeal'] as String? ?? 'breakfast',
+            foodData:     args['foodData'] as Map<String, dynamic>,
+            targetMeal:   args['targetMeal'] as String? ?? 'breakfast',
+            selectedDate: args['selectedDate'] as DateTime?,
           ),
         );
       case '/nutrition/macro-targets':
@@ -273,6 +291,15 @@ class ForgeFitApp extends StatelessWidget {
       case '/nutrition/micronutrients':
         return MaterialPageRoute(
           builder: (_) => const MicronutrientDashboardScreen(),
+        );
+      case '/progress-analytics':
+        return MaterialPageRoute(
+          builder: (_) => const ProgressAnalyticsScreen(),
+        );
+      case '/nutrition/insights':
+        // Nutrition insights now lives inside the unified Progress & Analytics screen
+        return MaterialPageRoute(
+          builder: (_) => const ProgressAnalyticsScreen(),
         );
       default:
         return MaterialPageRoute(
