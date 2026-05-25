@@ -57,6 +57,7 @@ class AICoachScoreBreakdown {
   final double noWorkoutsDeduction;
   final double adherenceDeduction;
   final double volumeSpikeDeduction;
+  final double volumeSpikeTrainingDeduction;
   final double muscleImbalanceDeduction;
   final double lowProteinDeduction;
   final double lowLoggingDeduction;
@@ -68,6 +69,7 @@ class AICoachScoreBreakdown {
     required this.noWorkoutsDeduction,
     required this.adherenceDeduction,
     required this.volumeSpikeDeduction,
+    required this.volumeSpikeTrainingDeduction,
     required this.muscleImbalanceDeduction,
     required this.lowProteinDeduction,
     required this.lowLoggingDeduction,
@@ -84,6 +86,8 @@ class AICoachScoreBreakdown {
           (json['adherence_deduction'] as num?)?.toDouble() ?? 0.0,
       volumeSpikeDeduction:
           (json['volume_spike_deduction'] as num?)?.toDouble() ?? 0.0,
+      volumeSpikeTrainingDeduction:
+          (json['volume_spike_training_deduction'] as num?)?.toDouble() ?? 0.0,
       muscleImbalanceDeduction:
           (json['muscle_imbalance_deduction'] as num?)?.toDouble() ?? 0.0,
       lowProteinDeduction:
@@ -126,6 +130,11 @@ class AICoachSummaryModel {
   final double previousWeeklyVolumeKg;
   final double? volumeChangePercent;
 
+  // Active program
+  final String? activeProgramName;
+  final int? activeProgramDaysPerWeek;
+  final double? adherencePercent;
+
   final double averageDailyCalories;
   final double averageDailyProteinG;
   final double? proteinPerKg;
@@ -155,6 +164,9 @@ class AICoachSummaryModel {
     required this.weeklyVolumeKg,
     required this.previousWeeklyVolumeKg,
     this.volumeChangePercent,
+    this.activeProgramName,
+    this.activeProgramDaysPerWeek,
+    this.adherencePercent,
     required this.averageDailyCalories,
     required this.averageDailyProteinG,
     this.proteinPerKg,
@@ -205,6 +217,11 @@ class AICoachSummaryModel {
           (json['previous_weekly_volume_kg'] as num?)?.toDouble() ?? 0.0,
       volumeChangePercent:
           (json['volume_change_percent'] as num?)?.toDouble(),
+      activeProgramName: json['active_program_name'] as String?,
+      activeProgramDaysPerWeek:
+          (json['active_program_days_per_week'] as num?)?.toInt(),
+      adherencePercent:
+          (json['adherence_percent'] as num?)?.toDouble(),
       averageDailyCalories:
           (json['average_daily_calories'] as num?)?.toDouble() ?? 0.0,
       averageDailyProteinG:

@@ -13,9 +13,9 @@ import '../utils/muscle_utils.dart';
 /// Highlight colour applied to active muscles.
 const String _kHighlightColor = '#FF3B30';
 
-/// Maps a canonical muscle name to the SVG element IDs used in front.svg.
-const Map<String, List<String>> _kFrontIds = {
-  'chest':     ['chest'],
+/// Maps a canonical muscle name → overlay SVG element IDs (front_overlay.svg).
+const Map<String, List<String>> _kFrontOverlayIds = {
+  'chest':     ['chest_l', 'chest_r'],
   'shoulders': ['shoulders_l', 'shoulders_r'],
   'biceps':    ['biceps_l', 'biceps_r'],
   'forearms':  ['forearms_l', 'forearms_r'],
@@ -24,13 +24,13 @@ const Map<String, List<String>> _kFrontIds = {
   'calves':    ['calves_l', 'calves_r'],
 };
 
-/// Maps a canonical muscle name to the SVG element IDs used in back.svg.
-const Map<String, List<String>> _kBackIds = {
+/// Maps a canonical muscle name → overlay SVG element IDs (back_overlay.svg).
+const Map<String, List<String>> _kBackOverlayIds = {
   'traps':      ['traps'],
-  'back':       ['back'],
+  'back':       ['back_l', 'back_r'],
   'triceps':    ['triceps_l', 'triceps_r'],
   'forearms':   ['forearms_l', 'forearms_r'],
-  'glutes':     ['glutes'],
+  'glutes':     ['glutes_l', 'glutes_r'],
   'hamstrings': ['hamstrings_l', 'hamstrings_r'],
   'calves':     ['calves_l', 'calves_r'],
 };
@@ -42,17 +42,17 @@ const Map<String, List<String>> _kBackIds = {
 /// Returns an opacity value based on how many sets were performed.
 String _opacityForSets(int setCount) {
   if (setCount <= 0) return '0';
-  if (setCount == 1) return '0.35';
-  if (setCount == 2) return '0.55';
-  return '0.75'; // 3+
+  if (setCount <= 3) return '0.40';
+  if (setCount <= 7) return '0.60';
+  return '0.80'; // 8+
 }
 
-/// Applies muscle highlighting to a raw SVG string using XML DOM manipulation.
+/// Applies muscle highlighting to the overlay SVG string.
 ///
 /// For each muscle in [muscleSetCounts] that has a matching entry in [idMap],
-/// the overlay element's `fill` is set to [_kHighlightColor] and `opacity`
-/// is set according to the intensity tier.
-String _applySvgHighlights(
+/// the path's `fill` is set to [_kHighlightColor] and `opacity` is set
+/// according to the intensity tier.
+String _applyOverlayHighlights(
   String rawSvg,
   Map<String, int> muscleSetCounts,
   Map<String, List<String>> idMap,
@@ -95,34 +95,34 @@ class _TapRegion {
   const _TapRegion(this.muscle, this.x, this.y, this.w, this.h);
 }
 
-// Approximate tap regions in the 318×564 SVG coordinate space.
+// Tap regions aligned with the overlay SVG shape positions (318×564 space).
 const List<_TapRegion> _kFrontTapRegions = [
-  _TapRegion('chest',     105, 92,  90, 56),
-  _TapRegion('shoulders',  58, 92,  44, 36),
-  _TapRegion('shoulders', 198, 92,  44, 36),
-  _TapRegion('biceps',     18, 100, 26, 58),
-  _TapRegion('biceps',    274, 100, 26, 58),
-  _TapRegion('forearms',   14, 160, 24, 52),
-  _TapRegion('forearms',  280, 160, 24, 52),
-  _TapRegion('abs',       120, 150, 60, 68),
-  _TapRegion('quads',      92, 310, 40, 75),
-  _TapRegion('quads',     186, 310, 40, 75),
-  _TapRegion('calves',    100, 435, 28, 70),
-  _TapRegion('calves',    190, 435, 28, 70),
+  _TapRegion('chest',     120, 128, 78, 36),
+  _TapRegion('shoulders',  82, 106, 38, 44),
+  _TapRegion('shoulders', 198, 106, 38, 44),
+  _TapRegion('biceps',     74, 140, 28, 52),
+  _TapRegion('biceps',    210, 140, 28, 52),
+  _TapRegion('forearms',   62, 190, 28, 60),
+  _TapRegion('forearms',  228, 190, 28, 60),
+  _TapRegion('abs',       134, 170, 50, 74),
+  _TapRegion('quads',     110, 256, 36, 114),
+  _TapRegion('quads',     170, 256, 36, 114),
+  _TapRegion('calves',    110, 390, 28, 84),
+  _TapRegion('calves',    174, 390, 28, 84),
 ];
 
 const List<_TapRegion> _kBackTapRegions = [
-  _TapRegion('traps',     102, 80,  96, 40),
-  _TapRegion('back',      100, 130, 100, 80),
-  _TapRegion('triceps',    20, 125, 26, 58),
-  _TapRegion('triceps',   254, 125, 26, 58),
-  _TapRegion('forearms',   16, 185, 24, 52),
-  _TapRegion('forearms',  260, 185, 24, 52),
-  _TapRegion('glutes',     98, 228, 104, 64),
-  _TapRegion('hamstrings', 93, 300, 38, 75),
-  _TapRegion('hamstrings',170, 300, 38, 75),
-  _TapRegion('calves',    100, 400, 28, 65),
-  _TapRegion('calves',    175, 400, 28, 65),
+  _TapRegion('traps',     122, 96,  74, 44),
+  _TapRegion('back',      108, 134, 102, 100),
+  _TapRegion('triceps',    72, 136, 30, 60),
+  _TapRegion('triceps',   216, 136, 30, 60),
+  _TapRegion('forearms',   60, 196, 28, 62),
+  _TapRegion('forearms',  230, 196, 28, 62),
+  _TapRegion('glutes',    112, 240, 96, 66),
+  _TapRegion('hamstrings',108, 300, 38, 92),
+  _TapRegion('hamstrings',174, 300, 38, 92),
+  _TapRegion('calves',    108, 396, 28, 82),
+  _TapRegion('calves',    182, 396, 28, 82),
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,8 +139,14 @@ class MuscleSvgViewer extends StatefulWidget {
 }
 
 class _MuscleSvgViewerState extends State<MuscleSvgViewer> {
-  String? _frontSvg;
-  String? _backSvg;
+  // Base body art SVGs (rendered as-is).
+  String? _frontBase;
+  String? _backBase;
+
+  // Overlay SVGs (highlights applied to these).
+  String? _frontOverlay;
+  String? _backOverlay;
+
   String? _selectedMuscle;
   bool _loading = true;
 
@@ -155,11 +161,15 @@ class _MuscleSvgViewerState extends State<MuscleSvgViewer> {
       final results = await Future.wait([
         rootBundle.loadString('assets/images/front.svg'),
         rootBundle.loadString('assets/images/back.svg'),
+        rootBundle.loadString('assets/images/front_overlay.svg'),
+        rootBundle.loadString('assets/images/back_overlay.svg'),
       ]);
       if (mounted) {
         setState(() {
-          _frontSvg = results[0];
-          _backSvg = results[1];
+          _frontBase    = results[0];
+          _backBase     = results[1];
+          _frontOverlay = results[2];
+          _backOverlay  = results[3];
           _loading = false;
         });
       }
@@ -180,10 +190,9 @@ class _MuscleSvgViewerState extends State<MuscleSvgViewer> {
 
   Color _tooltipColor(int count) {
     if (count == 0) return const Color(0xFF3A3A3C);
-    if (count <= 2) return const Color(0xFFFF9999);
-    if (count <= 4) return const Color(0xFFFF4444);
-    if (count <= 6) return const Color(0xFFCC1111);
-    return const Color(0xFF881111);
+    if (count <= 3) return const Color(0xFFFF9999);
+    if (count <= 7) return const Color(0xFFFF4444);
+    return const Color(0xFFCC1111);
   }
 
   // ── Tap handler ───────────────────────────────────────────────────────────
@@ -197,7 +206,8 @@ class _MuscleSvgViewerState extends State<MuscleSvgViewer> {
   // ── Build helpers ─────────────────────────────────────────────────────────
 
   Widget _buildSvgPanel(
-    String rawSvg,
+    String baseSvg,
+    String overlaySvg,
     Map<String, List<String>> idMap,
     List<_TapRegion> tapRegions,
     double displayW,
@@ -209,20 +219,29 @@ class _MuscleSvgViewerState extends State<MuscleSvgViewer> {
     final sx = displayW / svgW;
     final sy = displayH / svgH;
 
-    final highlighted = _applySvgHighlights(rawSvg, widget.muscleSetCounts, idMap);
+    final highlightedOverlay =
+        _applyOverlayHighlights(overlaySvg, widget.muscleSetCounts, idMap);
 
     return SizedBox(
       width: displayW,
       height: displayH,
       child: Stack(
         children: [
+          // Layer 1: Base anatomy SVG (untouched)
           SvgPicture.string(
-            highlighted,
+            baseSvg,
             width: displayW,
             height: displayH,
             fit: BoxFit.contain,
           ),
-          // Transparent tap zones overlaid on each muscle region
+          // Layer 2: Muscle overlay with highlights
+          SvgPicture.string(
+            highlightedOverlay,
+            width: displayW,
+            height: displayH,
+            fit: BoxFit.contain,
+          ),
+          // Layer 3: Transparent tap zones
           for (final r in tapRegions)
             Positioned(
               left: r.x * sx,
@@ -291,7 +310,8 @@ class _MuscleSvgViewerState extends State<MuscleSvgViewer> {
       );
     }
 
-    if (_frontSvg == null || _backSvg == null) {
+    if (_frontBase == null || _backBase == null ||
+        _frontOverlay == null || _backOverlay == null) {
       return const SizedBox(
         height: 300,
         child: Center(
@@ -353,13 +373,25 @@ class _MuscleSvgViewerState extends State<MuscleSvgViewer> {
             ],
           ),
           const SizedBox(height: 6),
-          // The two SVG views
+          // The two SVG views (base + overlay stacked)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildSvgPanel(_frontSvg!, _kFrontIds, _kFrontTapRegions, panelW),
+              _buildSvgPanel(
+                _frontBase!,
+                _frontOverlay!,
+                _kFrontOverlayIds,
+                _kFrontTapRegions,
+                panelW,
+              ),
               const SizedBox(width: 20),
-              _buildSvgPanel(_backSvg!, _kBackIds, _kBackTapRegions, panelW),
+              _buildSvgPanel(
+                _backBase!,
+                _backOverlay!,
+                _kBackOverlayIds,
+                _kBackTapRegions,
+                panelW,
+              ),
             ],
           ),
           const SizedBox(height: 4),

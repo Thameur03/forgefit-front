@@ -3,13 +3,19 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../auth/widgets/onboarding_widgets.dart';
 import '../models/program_model.dart';
+import '../models/scheduled_workout_model.dart';
 import '../providers/program_provider.dart';
 import '../providers/schedule_provider.dart';
 
 class ScheduleWorkoutSheet extends StatefulWidget {
   final DateTime selectedDate;
+  final ScheduledWorkoutModel? existingScheduled;
 
-  const ScheduleWorkoutSheet({super.key, required this.selectedDate});
+  const ScheduleWorkoutSheet({
+    super.key,
+    required this.selectedDate,
+    this.existingScheduled,
+  });
 
   @override
   State<ScheduleWorkoutSheet> createState() => _ScheduleWorkoutSheetState();
@@ -17,6 +23,7 @@ class ScheduleWorkoutSheet extends StatefulWidget {
 
 class _ScheduleWorkoutSheetState extends State<ScheduleWorkoutSheet> {
   bool _isScheduling = false;
+  bool _isUnscheduling = false;
 
   String _formatDate(DateTime date) {
     final today = DateTime.now();
@@ -26,12 +33,93 @@ class _ScheduleWorkoutSheetState extends State<ScheduleWorkoutSheet> {
     return DateFormat('EEE, MMM d, yyyy').format(date);
   }
 
+  String _exercisePreview(List<ProgramExerciseModel> exercises) {
+    if (exercises.isEmpty) return 'No exercise preview available';
+    final names = exercises.take(2).map((e) => e.exerciseName).toList();
+    final remaining = exercises.length - 2;
+    if (remaining > 0) {
+      return '${names.join(', ')} +$remaining more';
+    }
+    return names.join(', ');
+  }
+
+  Future<void> _confirmUnschedule(ScheduledWorkoutModel scheduled) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: OnboardingTheme.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Unschedule workout?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Remove "${scheduled.dayName}" from ${_formatDate(widget.selectedDate)}?',
+          style: const TextStyle(color: Colors.white60),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white60)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Unschedule',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    setState(() => _isUnscheduling = true);
+    final scheduleProvider = context.read<ScheduleProvider>();
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    final success = await scheduleProvider.deleteScheduled(scheduled.id);
+
+    if (!mounted) return;
+    setState(() => _isUnscheduling = false);
+
+    if (success) {
+      navigator.pop(); // close bottom sheet
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Workout unscheduled'),
+          backgroundColor: OnboardingTheme.card,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not unschedule workout: ${scheduleProvider.error ?? 'Unknown error'}',
+          ),
+          backgroundColor: OnboardingTheme.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   Future<void> _doSchedule(
     BuildContext context,
     ProgramDayModel day,
     ScheduleProvider scheduleProvider,
     bool hasExisting,
   ) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
     if (hasExisting) {
       final confirmed = await showDialog<bool>(
         context: context,
@@ -73,20 +161,23 @@ class _ScheduleWorkoutSheetState extends State<ScheduleWorkoutSheet> {
     setState(() => _isScheduling = false);
 
     if (result != null) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
+      navigator.pop();
+      messenger.showSnackBar(
         SnackBar(
-          content: Text('${day.dayName} scheduled for ${_formatDate(widget.selectedDate)}'),
+          content: Text(
+              '${day.dayName} scheduled for ${_formatDate(widget.selectedDate)}'),
           backgroundColor: OnboardingTheme.card,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           duration: const Duration(seconds: 3),
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
-          content: Text('Could not schedule workout: ${scheduleProvider.error ?? 'Unknown error'}'),
+          content: Text(
+              'Could not schedule workout: ${scheduleProvider.error ?? 'Unknown error'}'),
           backgroundColor: OnboardingTheme.danger,
           behavior: SnackBarBehavior.floating,
         ),
@@ -94,14 +185,125 @@ class _ScheduleWorkoutSheetState extends State<ScheduleWorkoutSheet> {
     }
   }
 
+  Widget _buildCurrentScheduledCard(
+      BuildContext context, ScheduledWorkoutModel existing) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: OnboardingTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: OnboardingTheme.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Calendar icon badge
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.blueAccent.withAlpha(30),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.event_available_rounded,
+              color: Colors.blueAccent,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Current Scheduled Workout',
+                  style: TextStyle(
+                    color: Colors.blueAccent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  existing.dayName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  existing.programName,
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  _formatDate(widget.selectedDate),
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _exercisePreview(existing.exercises),
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          // Unschedule X button
+          if (_isUnscheduling)
+            const SizedBox(
+              width: 32,
+              height: 32,
+              child: Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.redAccent,
+                  ),
+                ),
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: () => _confirmUnschedule(existing),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withAlpha(25),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.redAccent.withAlpha(80)),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.close,
+                  color: Colors.redAccent,
+                  size: 14,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    final existing = widget.existingScheduled;
 
     return Consumer2<ProgramProvider, ScheduleProvider>(
       builder: (context, programProvider, scheduleProvider, _) {
         final program = programProvider.activeProgram;
-        final hasExisting =
+        final hasExisting = existing != null ||
             scheduleProvider.hasScheduledOn(widget.selectedDate);
 
         return SingleChildScrollView(
@@ -208,36 +410,11 @@ class _ScheduleWorkoutSheetState extends State<ScheduleWorkoutSheet> {
                     ),
                   ),
                 ] else ...[
-                  // Program name chip
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: OnboardingTheme.accent.withAlpha(20),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: OnboardingTheme.accent.withAlpha(60)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.bolt,
-                            color: OnboardingTheme.accent, size: 14),
-                        const SizedBox(width: 6),
-                        Text(
-                          program.name,
-                          style: const TextStyle(
-                            color: OnboardingTheme.accent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  if (hasExisting)
+                  // ── Case B: date has a scheduled workout ──────────────────
+                  if (existing != null) ...[
+                    _buildCurrentScheduledCard(context, existing),
+                    const SizedBox(height: 12),
+                    // Warning: selecting another day will replace
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Container(
@@ -246,8 +423,8 @@ class _ScheduleWorkoutSheetState extends State<ScheduleWorkoutSheet> {
                         decoration: BoxDecoration(
                           color: Colors.orange.withAlpha(25),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: Colors.orange.withAlpha(80)),
+                          border:
+                              Border.all(color: Colors.orange.withAlpha(80)),
                         ),
                         child: const Row(
                           children: [
@@ -265,8 +442,38 @@ class _ScheduleWorkoutSheetState extends State<ScheduleWorkoutSheet> {
                         ),
                       ),
                     ),
+                  ] else ...[
+                    // ── Case A: no scheduled workout — show active program chip ──
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: OnboardingTheme.accent.withAlpha(20),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: OnboardingTheme.accent.withAlpha(60)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.bolt,
+                              color: OnboardingTheme.accent, size: 14),
+                          const SizedBox(width: 6),
+                          Text(
+                            program.name,
+                            style: const TextStyle(
+                              color: OnboardingTheme.accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
-                  // Program day cards
+                  // Program day cards (always shown)
                   ...program.days.map((day) {
                     final exerciseNames = day.exercises
                         .take(3)

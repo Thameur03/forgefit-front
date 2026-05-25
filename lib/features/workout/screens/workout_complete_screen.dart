@@ -10,6 +10,7 @@ import '../../home/screens/home_screen.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../widgets/muscle_svg_viewer.dart';
 import '../utils/muscle_utils.dart';
+import '../services/pr_detector.dart';
 
 class WorkoutCompleteScreen extends StatefulWidget {
   final String workoutId;
@@ -18,6 +19,7 @@ class WorkoutCompleteScreen extends StatefulWidget {
   final int completedSets;
   final double totalVolumeKg;
   final Map<String, int> muscleSetCounts;
+  final List<BrokenPr> brokenPrs;
 
   const WorkoutCompleteScreen({
     super.key,
@@ -27,6 +29,7 @@ class WorkoutCompleteScreen extends StatefulWidget {
     required this.completedSets,
     required this.totalVolumeKg,
     required this.muscleSetCounts,
+    required this.brokenPrs,
   });
 
   @override
@@ -54,9 +57,6 @@ class _WorkoutCompleteScreenState extends State<WorkoutCompleteScreen>
   late Animation<double> _fadeButtons;
 
   bool _isSaving = false;
-  
-  // Data State
-  final List<String> _newPrs = [];
   int _streakDays = 0;
 
   @override
@@ -129,20 +129,11 @@ class _WorkoutCompleteScreenState extends State<WorkoutCompleteScreen>
   Future<void> _loadData() async {
     final apiClient = context.read<ApiClient>();
     try {
-      final prResponse =
-          await apiClient.get(ApiConstants.statsPersonalRecords);
-      if (prResponse.data != null && prResponse.data is List) {
-      }
-    } catch (_) {}
-
-    try {
       final statsResponse = await apiClient.get(ApiConstants.statsWorkouts);
-      if (statsResponse.data != null) {
-        if (mounted) {
-          setState(() {
-            _streakDays = statsResponse.data['current_streak_days'] ?? 0;
-          });
-        }
+      if (statsResponse.data != null && mounted) {
+        setState(() {
+          _streakDays = statsResponse.data['current_streak_days'] ?? 0;
+        });
       }
     } catch (_) {}
   }
@@ -317,7 +308,7 @@ class _WorkoutCompleteScreenState extends State<WorkoutCompleteScreen>
               const SizedBox(height: 16),
 
               // SECTION 3: New PRs
-              if (_newPrs.isNotEmpty)
+              if (widget.brokenPrs.isNotEmpty)
                 FadeTransition(
                   opacity: _fadePRs,
                   child: Container(
@@ -336,7 +327,7 @@ class _WorkoutCompleteScreenState extends State<WorkoutCompleteScreen>
                           height: 36,
                           child: Stack(
                             children: List.generate(
-                              _newPrs.length > 3 ? 3 : _newPrs.length,
+                              widget.brokenPrs.length > 3 ? 3 : widget.brokenPrs.length,
                               (index) => Positioned(
                                 left: index * 20.0,
                                 child: Container(
@@ -359,7 +350,7 @@ class _WorkoutCompleteScreenState extends State<WorkoutCompleteScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '${_newPrs.length} NEW PRs',
+                                '${widget.brokenPrs.length} NEW PRs',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
@@ -368,7 +359,7 @@ class _WorkoutCompleteScreenState extends State<WorkoutCompleteScreen>
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                _newPrs.join(', '),
+                                widget.brokenPrs.map((p) => p.exerciseName).join(', '),
                                 style: const TextStyle(
                                   color: Colors.white60,
                                   fontSize: 12,
@@ -664,8 +655,7 @@ class _WorkoutCompleteScreenState extends State<WorkoutCompleteScreen>
   }
 
   Widget _buildPRsCard() {
-    final provider = context.read<WorkoutProvider>();
-    final prCount = provider.prCount;
+    final prCount = widget.brokenPrs.length;
 
     return Container(
       padding: const EdgeInsets.all(16),

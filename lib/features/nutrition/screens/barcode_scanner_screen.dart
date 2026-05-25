@@ -9,7 +9,9 @@ class BarcodeScannerScreen extends StatefulWidget {
 }
 
 class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
-  bool _scanned = false;
+  /// Set to true the moment we commit to popping — prevents any further
+  /// onDetect events from triggering a second pop on an already-popped route.
+  bool _hasPopped = false;
 
   @override
   Widget build(BuildContext context) {
@@ -22,15 +24,49 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       body: Stack(
         children: [
           MobileScanner(
-            onDetect: (capture) {
-              if (_scanned) return;
-              final barcode = capture.barcodes.firstOrNull;
-              if (barcode?.rawValue != null) {
-                _scanned = true;
-                Navigator.of(context).pop(barcode!.rawValue);
+            onDetect: (capture) async {
+              // Drop all events after the first accepted scan.
+              if (_hasPopped) return;
+
+              try {
+                final barcode = capture.barcodes.firstOrNull;
+                final raw = barcode?.rawValue;
+
+                debugPrint(
+                    '[BarcodeScanner] detected raw=$raw  type=${raw?.runtimeType}');
+
+                if (raw == null || raw.trim().isEmpty) {
+                  debugPrint('[BarcodeScanner] raw is null/empty — ignoring');
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Could not read barcode. Try again.'),
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                // Commit: no more scan events will be processed.
+                _hasPopped = true;
+                final result = raw.trim();
+                debugPrint('[BarcodeScanner] popping with barcode=$result');
+
+                if (mounted) {
+                  Navigator.of(context).pop(result);
+                }
+              } catch (e, st) {
+                debugPrint('[BarcodeScanner ERROR] $e');
+                debugPrint('[BarcodeScanner STACK] $st');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Scanner error: $e')),
+                  );
+                }
               }
             },
           ),
+
           // Scan window overlay
           Center(
             child: Container(
@@ -42,6 +78,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
               ),
             ),
           ),
+
           Positioned(
             bottom: 40,
             left: 0,

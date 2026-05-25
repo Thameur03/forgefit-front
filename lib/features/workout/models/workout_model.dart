@@ -1,6 +1,7 @@
 class WorkoutSetDetail {
   final String id;
   final String exerciseName;
+  final String targetMuscle; // e.g. 'pectorals', 'quads' from ExerciseDB
   final int reps;
   final double weightKg;
   final Map<String, dynamic>? lastSession;
@@ -8,6 +9,7 @@ class WorkoutSetDetail {
   WorkoutSetDetail({
     required this.id,
     required this.exerciseName,
+    this.targetMuscle = '',
     required this.reps,
     required this.weightKg,
     this.lastSession,
@@ -17,6 +19,7 @@ class WorkoutSetDetail {
     return WorkoutSetDetail(
       id: (json['id'] ?? 0).toString(),
       exerciseName: json['exercise_name'] ?? '',
+      targetMuscle: json['target_muscle'] as String? ?? '',
       reps: json['reps'] ?? 0,
       weightKg: (json['weight_kg'] ?? 0).toDouble(),
       lastSession: json['last_session'] as Map<String, dynamic>?,

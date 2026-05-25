@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/nutrition_provider.dart';
 import '../models/nutrition_model.dart';
+import '../models/food_filter_model.dart';
 import 'barcode_scanner_screen.dart';
 
 /// Maps UI meal key → backend meal_name string
@@ -27,7 +28,47 @@ String toBackendMealName(String meal) {
 String _capitalize(String s) =>
     s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
-// ── Logged item (holds raw food map + mutable quantity) ──────────────────────
+/// Builds a validated nutrition log payload for POST /nutrition/.
+///
+/// All add-food paths (FoodDetailScreen, quick-add sheet, bulk save) must
+/// use this builder — never construct the map manually — so that:
+/// • meal_name is always a non-empty backend enum value.
+/// • date is always explicit (never null → backend uses today).
+/// • No extra UI-only fields (brand, serving_size_g, …) leak into the body.
+/// • fdc_id is omitted when null (avoids sending a redundant null field).
+Map<String, dynamic> buildNutritionPayload({
+  required DateTime? selectedDate,
+  required String mealKey,       // UI key: 'breakfast' / 'lunch' / 'dinner' / 'snacks'
+  required Map<String, dynamic> food,
+  required double calories,
+  required double protein,
+  required double carbs,
+  required double fat,
+}) {
+  final targetDate = selectedDate ?? DateTime.now();
+  final dateStr =
+      '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}';
+
+  final backendMealName = toBackendMealName(mealKey);
+  assert(backendMealName.isNotEmpty, 'mealKey "$mealKey" resolved to empty meal_name');
+
+  final body = <String, dynamic>{
+    'date':      dateStr,
+    'meal_name': backendMealName,
+    'food_name': (food['name'] as String? ?? '').trim(),
+    'calories':  calories,
+    'protein_g': protein,
+    'carbs_g':   carbs,
+    'fat_g':     fat,
+  };
+
+  final fdcId = food['fdc_id'];
+  if (fdcId != null) body['fdc_id'] = fdcId;
+
+  return body;
+}
+
+
 
 class _LoggedItem {
   final String id;
@@ -46,7 +87,8 @@ class _LoggedItem {
 
 class AddFoodScreen extends StatefulWidget {
   final String initialMeal;
-  const AddFoodScreen({super.key, required this.initialMeal});
+  final DateTime? selectedDate; // null = today
+  const AddFoodScreen({super.key, required this.initialMeal, this.selectedDate});
 
   @override
   State<AddFoodScreen> createState() => _AddFoodScreenState();
@@ -60,6 +102,8 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
   int _addedCount = 0;
+  // Prevents duplicate POST when user taps the save button twice
+  bool _isSaving = false;
 
   final List<_LoggedItem> _loggedItems = [];
 
@@ -72,30 +116,20 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
 
   List<Map<String, dynamic>> _favoriteFoods = [];
 
-  static const List<String> _filters = [
-    'All', 'Protein', 'Carbs', 'Fats', 'Favorites',
+  // Common foods for the "All" discovery view
+  static const List<String> _commonFoodNames = [
+    'Chicken Breast', 'Brown Rice', 'Avocado', 'Oats', 'Egg Whites', 'Almonds', 'Greek Yogurt',
   ];
-
-  static const Map<String, List<String>> _commonFoodsByFilter = {
-    'Protein': ['Egg Whites', 'Greek Yogurt', 'Salmon Fillet', 'Tempeh', 'Cottage Cheese'],
-    'Carbs':   ['Brown Rice', 'Oats', 'Sweet Potato', 'Banana', 'Whole Wheat Bread'],
-    'Fats':    ['Avocado', 'Almonds', 'Olive Oil', 'Peanut Butter', 'Walnuts'],
-    'All':     ['Chicken Breast', 'Brown Rice', 'Avocado', 'Oats', 'Egg Whites', 'Almonds', 'Greek Yogurt'],
-  };
-
-  List<String> get _currentCommonFoodNames {
-    if (_activeFilter == 'Favorites') return [];
-    return _commonFoodsByFilter[_activeFilter] ??
-        _commonFoodsByFilter['All']!;
-  }
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
     _loadFavorites();
-    WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _loadCommonSources());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCommonSources();
+      context.read<NutritionProvider>().loadFoodFilters();
+    });
   }
 
   @override
@@ -130,6 +164,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
     _debounceTimer?.cancel();
     super.dispose();
   }
+
 
   Future<void> _loadHistory() async {
     setState(() => _loadingHistory = true);
@@ -182,13 +217,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
     if (!mounted) return;
     setState(() => _loadingCommonSources = true);
     final provider = context.read<NutritionProvider>();
-    final allNames = {
-      ...?_commonFoodsByFilter['All'],
-      ...?_commonFoodsByFilter['Protein'],
-      ...?_commonFoodsByFilter['Carbs'],
-      ...?_commonFoodsByFilter['Fats'],
-    };
-    for (final name in allNames) {
+    for (final name in _commonFoodNames) {
       if (_commonFoodCache.containsKey(name)) continue;
       final results = await provider.searchFood(name);
       if (mounted) {
@@ -212,18 +241,49 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
         setState(() {
           _query = value;
           _searchResults = [];
-          _isSearching = value.isNotEmpty;
+          _isSearching = value.isNotEmpty || _activeFilter != 'All';
         });
-        if (value.isNotEmpty) _runSearch(value);
+        if (value.isNotEmpty || _activeFilter != 'All') {
+          _runSearch(value);
+        }
       }
     });
   }
 
   Future<void> _runSearch(String query) async {
     final provider = context.read<NutritionProvider>();
-    final results = await provider.searchFood(query);
+    final filterSlug = (_activeFilter != 'All' && _activeFilter != 'Favorites')
+        ? provider.selectedFoodFilter?.slug
+        : null;
+    final results = await provider.searchFood(query, filterSlug: filterSlug);
     if (mounted && _query == query) {
-      setState(() => _searchResults = results);
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    }
+  }
+
+  void _onFilterSelected(String filterName, {FoodFilterModel? model}) {
+    setState(() {
+      _activeFilter = filterName;
+    });
+    final provider = context.read<NutritionProvider>();
+    provider.selectFoodFilter(model);
+
+    // If a backend filter is selected, trigger a search even if query is empty
+    if (filterName != 'All' && filterName != 'Favorites') {
+      setState(() {
+        _searchResults = [];
+        _isSearching = true;
+      });
+      _runSearch(_query);
+    } else if (_query.isEmpty) {
+      // Switching back to All or Favorites with no query — back to discovery
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
     }
   }
 
@@ -237,44 +297,120 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
   }
 
   // Whole card tap → go to food detail
+  // If initialMeal is empty (general Add Food), show a meal picker first.
   void _openFoodDetail(Map<String, dynamic> foodData) {
+    if (widget.initialMeal.isEmpty) {
+      _showMealPickerThenDetail(foodData);
+    } else {
+      _pushFoodDetail(foodData, widget.initialMeal);
+    }
+  }
+
+  void _pushFoodDetail(Map<String, dynamic> foodData, String meal) {
     Navigator.pushNamed(
       context,
       '/nutrition/food-detail',
       arguments: {
-        'foodData': foodData,
-        'targetMeal': widget.initialMeal,
+        'foodData':     foodData,
+        'targetMeal':   meal,
+        'selectedDate': widget.selectedDate,
       },
     ).then((_) => _loadFavorites());
   }
 
+  /// Shows a bottom sheet asking which meal to add to, then opens FoodDetailScreen.
+  void _showMealPickerThenDetail(Map<String, dynamic> foodData) {
+    const meals = [
+      ('Breakfast', 'breakfast'),
+      ('Lunch',     'lunch'),
+      ('Dinner',    'dinner'),
+      ('Snack',     'snacks'),
+    ];
+    showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                  color: Colors.white30,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Add to…',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 4),
+            ...meals.map(
+              (m) => ListTile(
+                leading: Icon(
+                  _mealIcon(m.$2),
+                  color: Theme.of(ctx).colorScheme.primary,
+                ),
+                title: Text(m.$1),
+                onTap: () => Navigator.of(ctx).pop(m.$2),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ).then((chosenMeal) {
+      if (chosenMeal != null && mounted) {
+        _pushFoodDetail(foodData, chosenMeal);
+      }
+    });
+  }
+
+  static IconData _mealIcon(String meal) {
+    switch (meal) {
+      case 'breakfast': return Icons.free_breakfast;
+      case 'lunch':     return Icons.lunch_dining;
+      case 'dinner':    return Icons.restaurant;
+      default:          return Icons.cookie;
+    }
+  }
+
   // + button tap → quick-add bottom sheet
+  // When initialMeal is empty (general Add Food), the sheet shows a meal
+  // dropdown so the user can choose before saving. This prevents an empty
+  // meal_name from being sent to the backend.
   void _showQuickAddSheet(Map<String, dynamic> food) {
     int quantity = 100;
+    // Start with the pre-selected meal (may be empty for general Add Food).
+    String selectedMeal = widget.initialMeal.trim().isEmpty
+        ? 'breakfast'
+        : widget.initialMeal.trim();
+    final needsMealPicker = widget.initialMeal.trim().isEmpty;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          final cal = (food['calories'] as num? ?? 0) / 100 * quantity;
-          final pro =
-              (food['protein_g'] as num? ?? 0) / 100 * quantity;
-          final carbs =
-              (food['carbs_g'] as num? ?? 0) / 100 * quantity;
-          final fat =
-              (food['fat_g'] as num? ?? 0) / 100 * quantity;
+          final cal   = (food['calories']  as num? ?? 0) / 100 * quantity;
+          final pro   = (food['protein_g'] as num? ?? 0) / 100 * quantity;
+          final carbs = (food['carbs_g']   as num? ?? 0) / 100 * quantity;
+          final fat   = (food['fat_g']     as num? ?? 0) / 100 * quantity;
 
           return Padding(
             padding: EdgeInsets.fromLTRB(
-              20,
-              20,
-              20,
+              20, 20, 20,
               MediaQuery.of(ctx).viewInsets.bottom + 20,
             ),
             child: Column(
@@ -282,8 +418,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
               children: [
                 // drag handle
                 Container(
-                  width: 40,
-                  height: 4,
+                  width: 40, height: 4,
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
                       color: Colors.white30,
@@ -302,105 +437,151 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                   '${pro.toStringAsFixed(1)}g P  •  '
                   '${carbs.toStringAsFixed(1)}g C  •  '
                   '${fat.toStringAsFixed(1)}g F',
-                  style: const TextStyle(
-                      color: Colors.grey, fontSize: 12),
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
+
+                // ── Meal picker (only shown when initialMeal is empty) ──
+                if (needsMealPicker) ...[
+                  Row(
+                    children: [
+                      const Text('Add to',
+                          style: TextStyle(color: Colors.white70, fontSize: 13)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButton<String>(
+                          value: selectedMeal,
+                          isExpanded: true,
+                          dropdownColor: Theme.of(context).colorScheme.surface,
+                          underline: const SizedBox.shrink(),
+                          items: const [
+                            DropdownMenuItem(value: 'breakfast', child: Text('Breakfast')),
+                            DropdownMenuItem(value: 'lunch',     child: Text('Lunch')),
+                            DropdownMenuItem(value: 'dinner',    child: Text('Dinner')),
+                            DropdownMenuItem(value: 'snacks',    child: Text('Snack')),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setSheetState(() => selectedMeal = v);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // ── Quantity picker ─────────────────────────────────────
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
-                      onPressed: () => setSheetState(() =>
-                          quantity = (quantity - 10).clamp(1, 9999)),
-                      icon: const Icon(
-                          Icons.remove_circle_outline),
+                      onPressed: () => setSheetState(
+                          () => quantity = (quantity - 10).clamp(1, 9999)),
+                      icon: const Icon(Icons.remove_circle_outline),
                     ),
                     SizedBox(
                       width: 70,
                       child: TextField(
                         textAlign: TextAlign.center,
                         keyboardType: TextInputType.number,
-                        controller: TextEditingController(
-                            text: quantity.toString()),
-                        decoration:
-                            const InputDecoration(isDense: true),
-                        onSubmitted: (v) => setSheetState(() =>
-                            quantity = (int.tryParse(v) ?? quantity)
-                                .clamp(1, 9999)),
+                        controller:
+                            TextEditingController(text: quantity.toString()),
+                        decoration: const InputDecoration(isDense: true),
+                        onSubmitted: (v) => setSheetState(
+                            () => quantity =
+                                (int.tryParse(v) ?? quantity).clamp(1, 9999)),
                       ),
                     ),
-                    const Text(' g',
-                        style: TextStyle(color: Colors.grey)),
+                    const Text(' g', style: TextStyle(color: Colors.grey)),
                     IconButton(
-                      onPressed: () => setSheetState(() =>
-                          quantity = (quantity + 10).clamp(1, 9999)),
+                      onPressed: () => setSheetState(
+                          () => quantity = (quantity + 10).clamp(1, 9999)),
                       icon: const Icon(Icons.add_circle_outline),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
+
+                // ── Save button ─────────────────────────────────────────
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      if (cal <= 0) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(const SnackBar(
-                            content: Text(
-                                'Calories must be greater than 0'),
-                            backgroundColor: Colors.red,
-                          ));
-                        }
-                        return;
-                      }
-                      final body = {
-                        'food_name': food['name'],
-                        'meal_name':
-                            toBackendMealName(widget.initialMeal),
-                        'calories': cal,
-                        'protein_g': pro,
-                        'carbs_g': carbs,
-                        'fat_g': fat,
-                      };
-                      try {
-                        await context
-                            .read<NutritionProvider>()
-                            .postNutritionLog(body);
-                        if (mounted) {
-                          setState(() {
-                            _addedCount++;
-                            _loggedItems.add(_LoggedItem(
-                              id: UniqueKey().toString(),
-                              food: food,
-                              quantity: quantity.toDouble(),
-                            ));
-                          });
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(SnackBar(
-                            content: Text(
-                                'Added to ${_capitalize(widget.initialMeal)}'),
-                            backgroundColor: Colors.green,
-                          ));
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(SnackBar(
-                            content: Text('Failed: $e'),
-                            backgroundColor: Colors.red,
-                          ));
-                        }
-                      }
-                    },
+                    onPressed: _isSaving
+                        ? null
+                        : () async {
+                            Navigator.pop(ctx);
+
+                            if (cal <= 0) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Calories must be > 0'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+
+                            if (_isSaving) return;
+                            setState(() => _isSaving = true);
+
+                            try {
+                              final payload = buildNutritionPayload(
+                                selectedDate: widget.selectedDate,
+                                mealKey:      selectedMeal,
+                                food:         food,
+                                calories:     cal,
+                                protein:      pro,
+                                carbs:        carbs,
+                                fat:          fat,
+                              );
+
+                              debugPrint('[QuickAdd] payload=$payload');
+
+                              final targetDate =
+                                  widget.selectedDate ?? DateTime.now();
+                              await context
+                                  .read<NutritionProvider>()
+                                  .postNutritionLog(payload,
+                                      selectedDate: targetDate);
+
+                              if (mounted) {
+                                setState(() {
+                                  _addedCount++;
+                                  _loggedItems.add(_LoggedItem(
+                                    id: UniqueKey().toString(),
+                                    food: food,
+                                    quantity: quantity.toDouble(),
+                                  ));
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        'Added to ${_capitalize(selectedMeal)}'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Failed: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            } finally {
+                              if (mounted) setState(() => _isSaving = false);
+                            }
+                          },
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 14),
-                    ),
-                    child: Text(
-                        'Add to ${_capitalize(widget.initialMeal)}'),
+                        padding: const EdgeInsets.symmetric(vertical: 14)),
+                    child: Text(needsMealPicker
+                        ? 'Add to ${_capitalize(selectedMeal)}'
+                        : 'Add to ${_capitalize(widget.initialMeal)}'),
                   ),
                 ),
               ],
@@ -411,68 +592,136 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
     );
   }
 
+
   Future<void> _onBarcodeTap() async {
+    debugPrint('[AddFood] opening barcode scanner');
+
     final scannedCode = await Navigator.push<String>(
       context,
-      MaterialPageRoute(
-          builder: (_) => const BarcodeScannerScreen()),
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
     );
-    if (scannedCode != null && mounted) {
-      final result = await _lookupBarcode(scannedCode);
-      if (result != null && mounted) {
-        _openFoodDetail(result);
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  'Product not found. Try searching manually.')),
-        );
-      }
+
+    debugPrint('[AddFood] scanner returned scannedCode=$scannedCode  type=${scannedCode?.runtimeType}');
+
+    if (!mounted) return;
+
+    if (scannedCode == null || scannedCode.trim().isEmpty) {
+      debugPrint('[AddFood] scan cancelled or empty — nothing to do');
+      return;
+    }
+
+    final barcode = scannedCode.trim();
+    debugPrint('[AddFood] starting barcode lookup for barcode=$barcode');
+
+    // Show a loading indicator while we look up the product.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Looking up product…'),
+        duration: Duration(seconds: 10),
+      ),
+    );
+
+    final result = await _lookupBarcode(barcode);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    if (result != null) {
+      debugPrint('[AddFood] lookup succeeded name=${result['name']}  kcal=${result['calories']}');
+      _openFoodDetail(result);
+    } else {
+      debugPrint('[AddFood] lookup returned null — product not found barcode=$barcode');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Product not found. Try searching manually.'),
+        ),
+      );
     }
   }
 
-  Future<Map<String, dynamic>?> _lookupBarcode(
-      String barcode) async {
-    try {
-      final response = await Dio().get(
-        'https://world.openfoodfacts.org/api/v0/product/$barcode.json',
-        options: Options(
-            receiveTimeout: const Duration(seconds: 8)),
-      );
-      if (response.data['status'] == 1) {
-        final product =
-            response.data['product'] as Map<String, dynamic>;
-        final nutriments =
-            product['nutriments'] as Map<String, dynamic>? ??
-                {};
-        return {
-          'fdc_id': barcode,
-          'name': product['product_name'] ?? 'Unknown Product',
-          'brand': product['brands'] ?? '',
-          'calories':
-              (nutriments['energy-kcal_100g'] as num?)
-                      ?.toDouble() ??
-                  0.0,
-          'protein_g':
-              (nutriments['proteins_100g'] as num?)
-                      ?.toDouble() ??
-                  0.0,
-          'carbs_g':
-              (nutriments['carbohydrates_100g'] as num?)
-                      ?.toDouble() ??
-                  0.0,
-          'fat_g':
-              (nutriments['fat_100g'] as num?)?.toDouble() ??
-                  0.0,
-        };
-      }
-    } catch (_) {}
+  Future<Map<String, dynamic>?> _lookupBarcode(String barcode) async {
+    debugPrint('[BarcodeLookup] starting lookup barcode=$barcode');
 
-    if (mounted) {
+    // ── 1. Try OpenFoodFacts ──────────────────────────────────────
+    try {
+      final url =
+          'https://world.openfoodfacts.org/api/v0/product/$barcode.json';
+      debugPrint('[BarcodeLookup] GET $url');
+
+      final response = await Dio().get(
+        url,
+        options: Options(receiveTimeout: const Duration(seconds: 10)),
+      );
+
+      debugPrint('[BarcodeLookup] OFF status=${response.data['status']}');
+
+      // OpenFoodFacts returns status 1 (int) when product is found.
+      final status = response.data['status'];
+      final statusOk = status == 1 || status == '1';
+
+      if (statusOk) {
+        final product =
+            response.data['product'] as Map<String, dynamic>? ?? {};
+        final nutriments =
+            product['nutriments'] as Map<String, dynamic>? ?? {};
+
+        final name = (product['product_name'] as String?)?.trim() ?? '';
+        final kcal =
+            (nutriments['energy-kcal_100g'] as num?)?.toDouble() ?? 0.0;
+
+        debugPrint('[BarcodeLookup] OFF name="$name"  kcal=$kcal');
+        debugPrint('[BarcodeLookup] OFF nutriments=$nutriments');
+
+        if (name.isNotEmpty) {
+          final food = {
+            'barcode': barcode,
+            'name': name,
+            'brand': (product['brands'] as String?)?.trim() ?? '',
+            'calories': kcal,
+            'protein_g':
+                (nutriments['proteins_100g'] as num?)?.toDouble() ?? 0.0,
+            'carbs_g':
+                (nutriments['carbohydrates_100g'] as num?)?.toDouble()
+                    ?? 0.0,
+            'fat_g':
+                (nutriments['fat_100g'] as num?)?.toDouble() ?? 0.0,
+          };
+          debugPrint('[BarcodeLookup] returning OFF food=$food');
+          return food;
+        } else {
+          debugPrint(
+              '[BarcodeLookup] OFF product found but name is empty — trying backend search fallback');
+        }
+      } else {
+        debugPrint(
+            '[BarcodeLookup] OFF product not found (status=$status) — trying backend search fallback');
+      }
+    } catch (e, st) {
+      debugPrint('[BarcodeLookup] OFF request failed: $e');
+      debugPrint('[BarcodeLookup] OFF stack: $st');
+      // Fall through to backend search fallback below.
+    }
+
+    // ── 2. Fallback: backend text search with barcode string ──────
+    debugPrint('[BarcodeLookup] trying backend searchFood fallback barcode=$barcode');
+    if (!mounted) {
+      debugPrint('[BarcodeLookup] widget not mounted — aborting fallback');
+      return null;
+    }
+    try {
       final results =
           await context.read<NutritionProvider>().searchFood(barcode);
-      return results.isNotEmpty ? results.first : null;
+      debugPrint('[BarcodeLookup] backend fallback results count=${results.length}');
+      if (results.isNotEmpty) {
+        debugPrint('[BarcodeLookup] backend fallback first=${results.first}');
+        return results.first;
+      }
+    } catch (e, st) {
+      debugPrint('[BarcodeLookup] backend fallback failed: $e');
+      debugPrint('[BarcodeLookup] backend fallback stack: $st');
     }
+
+    debugPrint('[BarcodeLookup] all sources exhausted — product not found barcode=$barcode');
     return null;
   }
 
@@ -485,7 +734,20 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            context.read<NutritionProvider>().loadTodayNutrition();
+            final p = context.read<NutritionProvider>();
+            final date = widget.selectedDate;
+            final now = DateTime.now();
+            final isToday = date == null ||
+                (date.year == now.year &&
+                 date.month == now.month &&
+                 date.day == now.day);
+            if (isToday) {
+              p.loadTodayNutrition();
+            } else {
+              final dateStr =
+                  '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+              p.loadNutritionForDate(dateStr);
+            }
             Navigator.pop(context);
           },
         ),
@@ -539,33 +801,48 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
           // ── Filter chips ────────────────────────────────────────
           SizedBox(
             height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _filters.length,
-              separatorBuilder: (context, index) =>
-                  const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final f = _filters[i];
-                final isActive = _activeFilter == f;
-                return ChoiceChip(
-                  label: Text(f),
-                  selected: isActive,
-                  onSelected: (_) =>
-                      setState(() => _activeFilter = f),
-                  selectedColor: theme.colorScheme.primary,
-                  backgroundColor: theme.colorScheme.surface,
-                  labelStyle: TextStyle(
-                    color: isActive
-                        ? Colors.white
-                        : Colors.white70,
-                    fontWeight: isActive
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    fontSize: 13,
-                  ),
-                  checkmarkColor: Colors.white,
+            child: Consumer<NutritionProvider>(
+              builder: (_, provider, __) {
+                // Build chips: All + backend filters + Favorites
+                final backendFilters = provider.foodFilters;
+                final chipNames = <String>['All'];
+                final chipModels = <FoodFilterModel?>[null];
+                for (final f in backendFilters) {
+                  chipNames.add(f.name);
+                  chipModels.add(f);
+                }
+                chipNames.add('Favorites');
+                chipModels.add(null);
+
+                return ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: chipNames.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final name = chipNames[i];
+                    final isActive = _activeFilter == name;
+                    return ChoiceChip(
+                      label: Text(name),
+                      selected: isActive,
+                      onSelected: (_) =>
+                          _onFilterSelected(name, model: chipModels[i]),
+                      selectedColor: theme.colorScheme.primary,
+                      backgroundColor: theme.colorScheme.surface,
+                      labelStyle: TextStyle(
+                        color: isActive
+                            ? Colors.white
+                            : Colors.white70,
+                        fontWeight: isActive
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        fontSize: 13,
+                      ),
+                      checkmarkColor: Colors.white,
+                    );
+                  },
                 );
               },
             ),
@@ -577,7 +854,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
 
           // ── Body ────────────────────────────────────────────────
           Expanded(
-            child: _isSearching
+            child: (_isSearching || (_searchResults.isNotEmpty && _query.isNotEmpty) || (_activeFilter != 'All' && _activeFilter != 'Favorites' && _searchResults.isNotEmpty))
                 ? _buildSearchResults(theme)
                 : _buildDiscovery(theme),
           ),
@@ -595,7 +872,18 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                 ),
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF50C878)),
                 onPressed: () {
-                  context.read<NutritionProvider>().loadTodayNutrition();
+                  final p = context.read<NutritionProvider>();
+                  final targetDate = widget.selectedDate ?? DateTime.now();
+                  final now = DateTime.now();
+                  final isToday = targetDate.year == now.year &&
+                      targetDate.month == now.month &&
+                      targetDate.day == now.day;
+                  if (isToday) {
+                    p.loadTodayNutrition();
+                  } else {
+                    p.loadNutritionForDate(
+                        NutritionProvider.dateKey(targetDate));
+                  }
                   Navigator.pop(context);
                 },
               ),
@@ -637,14 +925,10 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
       );
     }
 
-    final filterLabel = _activeFilter == 'All'
-        ? ''
-        : '${_activeFilter.toUpperCase()} ';
-
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
-        Text('YOUR FREQUENT ${filterLabel}SOURCES',
+        Text('YOUR FREQUENT SOURCES',
             style: theme.textTheme.labelSmall?.copyWith(
                 color: Colors.white.withAlpha(128),
                 letterSpacing: 1)),
@@ -670,7 +954,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
 
         const SizedBox(height: 20),
 
-        Text('COMMON ${filterLabel}SOURCES',
+        Text('COMMON SOURCES',
             style: theme.textTheme.labelSmall?.copyWith(
                 color: Colors.white.withAlpha(128),
                 letterSpacing: 1)),
@@ -678,7 +962,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
         if (_loadingCommonSources)
           const Center(child: CircularProgressIndicator())
         else
-          ..._currentCommonFoodNames.map((name) {
+          ..._commonFoodNames.map((name) {
             final cached = _commonFoodCache[name];
             final isFailed = _failedLookups.contains(name);
             final displayData = cached ??
@@ -978,19 +1262,24 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                     onPressed: () async {
                       Navigator.pop(ctx);
                       final provider = context.read<NutritionProvider>();
+                      final targetDate = widget.selectedDate ?? DateTime.now();
+                      final dateStr =
+                          '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}';
                       for (final item in List.of(_loggedItems)) {
                         final body = {
+                          'date':      dateStr,
                           'food_name': item.name,
-                          'fdc_id': item.food['fdc_id'],
+                          'fdc_id':    item.food['fdc_id'],
                           'meal_name': selectedMeal,
-                          'amount': item.quantity,
-                          'unit': 'g',
-                          'calories': item.kcal,
+                          'amount':    item.quantity,
+                          'unit':      'g',
+                          'calories':  item.kcal,
                           'protein_g': item.protein,
-                          'carbs_g': item.carbs,
-                          'fat_g': item.fat,
+                          'carbs_g':   item.carbs,
+                          'fat_g':     item.fat,
                         };
-                        await provider.postNutritionLog(body);
+                        await provider.postNutritionLog(
+                            body, selectedDate: targetDate);
                       }
                       if (mounted) {
                         setState(() => _loggedItems.clear());

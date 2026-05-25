@@ -134,6 +134,8 @@ class ForgeFitApp extends StatelessWidget {
               ChangeNotifierProvider.value(
                   value: context.read<NutritionProvider>()),
               ChangeNotifierProvider.value(
+                  value: context.read<NutritionStatsProvider>()),
+              ChangeNotifierProvider.value(
                   value: context.read<StatsProvider>()),
               ChangeNotifierProvider.value(
                   value: context.read<ProgressProvider>()),
@@ -294,12 +296,12 @@ class ForgeFitApp extends StatelessWidget {
         );
       case '/progress-analytics':
         return MaterialPageRoute(
-          builder: (_) => const ProgressAnalyticsScreen(),
+          builder: (_) => const ProgressAnalyticsScreen(showBackButton: true),
         );
       case '/nutrition/insights':
         // Nutrition insights now lives inside the unified Progress & Analytics screen
         return MaterialPageRoute(
-          builder: (_) => const ProgressAnalyticsScreen(),
+          builder: (_) => const ProgressAnalyticsScreen(showBackButton: true),
         );
       default:
         return MaterialPageRoute(

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../auth/widgets/onboarding_widgets.dart';
 import '../../progress/providers/stats_provider.dart';
-import '../../progress/screens/stats_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -234,78 +233,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
 
-              // ── Section 3 — Progress & Analytics ──────────────────────────
-              const SizedBox(height: 16),
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const StatsScreen(),
-                    ),
-                  ),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 18, horizontal: 18),
-                    decoration: BoxDecoration(
-                      color: OnboardingTheme.cardDark,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: OnboardingTheme.accent
-                                .withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.bar_chart_rounded,
-                            color: OnboardingTheme.accent,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Progress & Analytics',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Volume, streaks, muscle map',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white38,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(
-                          Icons.chevron_right_rounded,
-                          color: Colors.white38,
-                          size: 22,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // ── Section 4 — Logout ────────────────────────────────────────
+              // ── Section 3 — Logout ───────────────────────────────────────
               const SizedBox(height: 16),
               Material(
                 color: Colors.transparent,

@@ -5,24 +5,31 @@ import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../models/program_model.dart';
 
+
 class ProgramProvider extends ChangeNotifier {
   final ApiClient _apiClient;
 
   List<ProgramModel> _programs = [];
   List<ProgramTemplate> _templates = [];
+  List<ProgramDbTemplateModel> _dbTemplates = [];
   ProgramModel? _activeProgram;
   bool _isLoading = false;
+  bool _isLoadingDbTemplates = false;
   bool _isFromCache = false;
   String? _error;
+  String? _dbTemplatesError;
 
   ProgramProvider({required ApiClient apiClient}) : _apiClient = apiClient;
 
   List<ProgramModel> get programs => _programs;
   List<ProgramTemplate> get templates => _templates;
+  List<ProgramDbTemplateModel> get dbTemplates => _dbTemplates;
   ProgramModel? get activeProgram => _activeProgram;
   bool get isLoading => _isLoading;
+  bool get isLoadingDbTemplates => _isLoadingDbTemplates;
   bool get isFromCache => _isFromCache;
   String? get error => _error;
+  String? get dbTemplatesError => _dbTemplatesError;
 
   void _setLoading(bool v) {
     _isLoading = v;
@@ -288,6 +295,54 @@ class ProgramProvider extends ChangeNotifier {
       return newDay;
     } catch (e) {
       _error = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // ─── DB Template Methods ──────────────────────────────────────────────────
+
+  /// Loads published admin-managed templates from the database.
+  /// Gracefully sets [dbTemplatesError] on failure without crashing.
+  Future<void> loadGlobalTemplates() async {
+    _isLoadingDbTemplates = true;
+    _dbTemplatesError = null;
+    notifyListeners();
+    try {
+      debugPrint('[Programs] Loading global templates...');
+      final response = await _apiClient.get(ApiConstants.programGlobalTemplates);
+      final rawList = response.data as List? ?? [];
+      _dbTemplates = rawList
+          .map((t) => ProgramDbTemplateModel.fromJson(t as Map<String, dynamic>))
+          .toList();
+      debugPrint('[Programs] DB templates count=${_dbTemplates.length}');
+    } catch (e) {
+      _dbTemplatesError = e.toString();
+      _dbTemplates = [];
+      debugPrint('[Programs] loadGlobalTemplates error: $e');
+    } finally {
+      _isLoadingDbTemplates = false;
+      notifyListeners();
+    }
+  }
+
+  /// Copies a DB-managed admin template into the current user's program library.
+  /// Returns the new [ProgramModel] on success, or null on failure.
+  Future<ProgramModel?> adoptDbTemplate(int templateId) async {
+    try {
+      debugPrint('[Programs] Adopting DB template id=$templateId');
+      final response = await _apiClient.post(
+        '${ApiConstants.programFromDbTemplate}$templateId',
+        data: {},
+      );
+      final newProgram = ProgramModel.fromJson(response.data);
+      debugPrint('[Programs] Adopted program id=${newProgram.id}');
+      _programs.insert(0, newProgram);
+      notifyListeners();
+      return newProgram;
+    } catch (e) {
+      _error = e.toString();
+      debugPrint('[Programs] adoptDbTemplate error: $e');
       notifyListeners();
       return null;
     }

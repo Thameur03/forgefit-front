@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import '../providers/workout_provider.dart';
+import '../../progress/data/exercise_muscle_map.dart';
+import '../../progress/models/muscle_group.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MUSCLE MAPPING
@@ -52,9 +55,35 @@ String? mapToUiMuscle(String apiMuscle) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MUSCLE GROUP → CANONICAL SVG KEY
+// MuscleGroup enum (Progress module) uses 10 values; SVG uses 12 string keys.
+// The only non-trivial mapping: MuscleGroup.core → 'abs'.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Converts a [MuscleGroup] enum value to the canonical SVG muscle key.
+String _muscleGroupToCanonical(MuscleGroup g) {
+  switch (g) {
+    case MuscleGroup.chest:      return 'chest';
+    case MuscleGroup.back:       return 'back';
+    case MuscleGroup.shoulders:  return 'shoulders';
+    case MuscleGroup.biceps:     return 'biceps';
+    case MuscleGroup.triceps:    return 'triceps';
+    case MuscleGroup.quads:      return 'quads';
+    case MuscleGroup.hamstrings: return 'hamstrings';
+    case MuscleGroup.glutes:     return 'glutes';
+    case MuscleGroup.calves:     return 'calves';
+    case MuscleGroup.core:       return 'abs';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SET COUNT AGGREGATION
 // Loops exercises → counts completed sets → aggregates by UI muscle group.
 // Both primary (targetMuscles) and secondary muscles contribute equally.
+//
+// If ExerciseDB metadata is unavailable (exerciseResult == null AND
+// targetMuscle == '—'), falls back to the synchronous local lookup
+// `musclesForExercise()` from exercise_muscle_map.dart.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Builds a map of { uiMuscleGroup → completedSetCount } from the active workout.
@@ -75,12 +104,30 @@ Map<String, int> buildMuscleSetCounts(List<ActiveExercise> exercises) {
       rawMuscles.addAll(result.targetMuscles);
       rawMuscles.addAll(result.secondaryMuscles);
     } else if (exercise.targetMuscle.isNotEmpty && exercise.targetMuscle != '—') {
-      // Fallback: use the simple targetMuscle string.
+      // Fallback 1: use the simple targetMuscle string.
       rawMuscles.add(exercise.targetMuscle);
     }
 
-    // If no muscle data at all, skip.
-    if (rawMuscles.isEmpty) continue;
+    // ── Fallback 2: synchronous local exercise→muscle lookup ────────────
+    // If no ExerciseDB metadata is available at all, use the hardcoded
+    // exercise_muscle_map.dart which maps exercise names → MuscleGroup sets.
+    if (rawMuscles.isEmpty) {
+      final fallbackGroups = musclesForExercise(exercise.name);
+      if (fallbackGroups.isNotEmpty) {
+        debugPrint('[MuscleMap] fallback for "${exercise.name}" → '
+            '${fallbackGroups.map((g) => g.label).toList()}');
+        final Set<String> addedGroups = {};
+        for (final g in fallbackGroups) {
+          final canonical = _muscleGroupToCanonical(g);
+          if (addedGroups.contains(canonical)) continue;
+          addedGroups.add(canonical);
+          counts[canonical] = (counts[canonical] ?? 0) + completedSets;
+        }
+        continue; // skip the rawMuscles loop below
+      }
+      debugPrint('[MuscleMap] no muscle data for "${exercise.name}"');
+      continue;
+    }
 
     // Map each raw muscle to a UI group; add set count.
     final Set<String> addedGroups = {}; // deduplicate per exercise
@@ -93,6 +140,7 @@ Map<String, int> buildMuscleSetCounts(List<ActiveExercise> exercises) {
     }
   }
 
+  debugPrint('[MuscleMap] final muscleSetCounts=$counts');
   return counts;
 }
 

@@ -12,6 +12,7 @@ import '../../home/screens/home_screen.dart';
 import '../widgets/exercise_search_sheet.dart';
 import '../models/program_model.dart';
 import '../utils/muscle_utils.dart';
+import '../services/pr_detector.dart';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LOG WORKOUT SCREEN
@@ -421,7 +422,7 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen>
     }
   }
 
-  void _finishWorkout() {
+  Future<void> _finishWorkout() async {
     _restTimer?.cancel();
 
     final provider = _provider;
@@ -474,6 +475,32 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen>
     // Includes both primary (targetMuscles) and secondary muscles.
     final muscleSetCounts = buildMuscleSetCounts(provider.activeExercises);
 
+    // ── PR detection ────────────────────────────────────────────────────────
+    // Snapshot active exercises NOW, before any async gap that could clear them.
+    // provider.workouts returns summary-only (no sets) — we need detailed data.
+    final completedSnapshot = List<ActiveExercise>.from(provider.activeExercises);
+
+    debugPrint('[PR Debug] activeExercises=${completedSnapshot.length}');
+    for (final ex in completedSnapshot) {
+      for (final s in ex.sets) {
+        debugPrint('[PR Debug] ${ex.name}: weight=${s.weightKg} reps=${s.reps} completed=${s.isCompleted}');
+      }
+    }
+
+    // Load previous workouts WITH their sets (list endpoint is summary-only).
+    final previousDetailed =
+        await provider.loadDetailedWorkoutsForPrBaseline(limit: 50);
+
+    if (!mounted) return;
+
+    final brokenPrs = PrDetector.detectBrokenPrs(
+      completedExercises: completedSnapshot,
+      previousWorkouts: previousDetailed,
+    );
+    debugPrint('[PR Detection] records broken: ${brokenPrs.length}');
+
+    if (!mounted) return;
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -484,6 +511,7 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen>
           elapsedSeconds: elapsedSecs,
           completedSets: _completedSets,
           muscleSetCounts: muscleSetCounts,
+          brokenPrs: brokenPrs,
         ),
       ),
     );

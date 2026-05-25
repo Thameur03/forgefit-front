@@ -2,21 +2,62 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/api_client.dart';
 import '../models/nutrition_model.dart';
+import '../models/food_filter_model.dart';
 
 class NutritionProvider extends ChangeNotifier {
   final ApiClient _apiClient;
 
-  List<NutritionModel> _todayLogs = [];
-  DailyNutritionSummary? _todaySummary;
+  // ── Per-date caches ────────────────────────────────────────────────────────
+  /// Stores summaries indexed by 'YYYY-MM-DD' key so navigating away and back
+  /// always shows the correct date's data without stale overlap.
+  final Map<String, DailyNutritionSummary> _summariesByDate = {};
+  final Map<String, List<NutritionModel>> _logsByDate = {};
+
   bool _isLoading = false;
   String? _errorMessage;
 
+  // Food filter state
+  List<FoodFilterModel> _foodFilters = [];
+  FoodFilterModel? _selectedFoodFilter;
+  bool _loadingFilters = false;
+  String? _filtersError;
+
   NutritionProvider({required ApiClient apiClient}) : _apiClient = apiClient;
 
-  List<NutritionModel> get todayLogs => _todayLogs;
-  DailyNutritionSummary? get todaySummary => _todaySummary;
+  // ── Public getters ─────────────────────────────────────────────────────────
+
+  /// Summary for the given date key (e.g. '2026-05-04'), or null if not loaded.
+  DailyNutritionSummary? summaryForDate(String dateKey) =>
+      _summariesByDate[dateKey];
+
+  /// Logs for the given date key, or empty list.
+  List<NutritionModel> logsForDate(String dateKey) =>
+      _logsByDate[dateKey] ?? [];
+
+  /// Convenience getters that the Nutrition screen previously used.
+  /// These now return the *today* entry so existing call sites keep working.
+  DailyNutritionSummary? get todaySummary =>
+      _summariesByDate[_todayKey()];
+  List<NutritionModel> get todayLogs =>
+      _logsByDate[_todayKey()] ?? [];
+
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+
+  List<FoodFilterModel> get foodFilters => _foodFilters;
+  FoodFilterModel? get selectedFoodFilter => _selectedFoodFilter;
+  bool get loadingFilters => _loadingFilters;
+  String? get filtersError => _filtersError;
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  static String dateKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  static String _todayKey() => dateKey(DateTime.now());
+
+  static bool _isSameDate(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   void _setLoading(bool value) {
     _isLoading = value;
@@ -37,28 +78,28 @@ class NutritionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Backend returns:
-  /// { "date": "...", "total_calories": 0.0, "total_protein_g": 0.0,
-  ///   "total_carbs_g": 0.0, "total_fat_g": 0.0, "logs": [], "meals": {} }
+  void _storeSummary(String key, Map<String, dynamic> data) {
+    _summariesByDate[key] = DailyNutritionSummary(
+      totalCalories: (data['total_calories'] as num?)?.toDouble() ?? 0.0,
+      totalProtein:  (data['total_protein_g'] as num?)?.toDouble() ?? 0.0,
+      totalCarbs:    (data['total_carbs_g']   as num?)?.toDouble() ?? 0.0,
+      totalFat:      (data['total_fat_g']     as num?)?.toDouble() ?? 0.0,
+    );
+    final logsList = data['logs'] as List? ?? [];
+    _logsByDate[key] = logsList
+        .map((log) => NutritionModel.fromJson(log as Map<String, dynamic>))
+        .toList();
+  }
+
+  // ── Load endpoints ─────────────────────────────────────────────────────────
+
   Future<void> loadTodayNutrition() async {
     _setLoading(true);
     _setError(null);
     try {
       final response = await _apiClient.get(ApiConstants.nutritionToday);
       final data = response.data as Map<String, dynamic>;
-
-      _todaySummary = DailyNutritionSummary(
-        totalCalories: (data['total_calories'] as num?)?.toDouble() ?? 0.0,
-        totalProtein: (data['total_protein_g'] as num?)?.toDouble() ?? 0.0,
-        totalCarbs: (data['total_carbs_g'] as num?)?.toDouble() ?? 0.0,
-        totalFat: (data['total_fat_g'] as num?)?.toDouble() ?? 0.0,
-      );
-
-      final logsList = data['logs'] as List? ?? [];
-      _todayLogs = logsList
-          .map((log) => NutritionModel.fromJson(log as Map<String, dynamic>))
-          .toList();
-
+      _storeSummary(_todayKey(), data);
       notifyListeners();
     } catch (e) {
       _setError('Failed to load nutrition data');
@@ -74,19 +115,7 @@ class NutritionProvider extends ChangeNotifier {
       final response =
           await _apiClient.get('${ApiConstants.nutritionDate}$date');
       final data = response.data as Map<String, dynamic>;
-
-      _todaySummary = DailyNutritionSummary(
-        totalCalories: (data['total_calories'] as num?)?.toDouble() ?? 0.0,
-        totalProtein: (data['total_protein_g'] as num?)?.toDouble() ?? 0.0,
-        totalCarbs: (data['total_carbs_g'] as num?)?.toDouble() ?? 0.0,
-        totalFat: (data['total_fat_g'] as num?)?.toDouble() ?? 0.0,
-      );
-
-      final logsList = data['logs'] as List? ?? [];
-      _todayLogs = logsList
-          .map((log) => NutritionModel.fromJson(log as Map<String, dynamic>))
-          .toList();
-
+      _storeSummary(date, data);
       notifyListeners();
     } catch (e) {
       _setError('Failed to load nutrition data');
@@ -95,8 +124,8 @@ class NutritionProvider extends ChangeNotifier {
     }
   }
 
-  /// Returns all individual log entries from the last [days] days via a
-  /// single call to the history endpoint which embeds logs in each summary.
+  /// Returns all individual log entries from the last [days] days via the
+  /// history endpoint.
   Future<List<NutritionModel>> loadNutritionHistory({int days = 30}) async {
     try {
       final response = await _apiClient.get(
@@ -116,15 +145,22 @@ class NutritionProvider extends ChangeNotifier {
     }
   }
 
-  /// Food search endpoint returns flat snake_case objects:
-  /// [{ "fdc_id": 123, "name": "...", "brand": "...",
-  ///    "calories": 0.0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0 }]
-  Future<List<Map<String, dynamic>>> searchFood(String query) async {
-    if (query.trim().isEmpty) return [];
+  // ── Food search ────────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> searchFood(String query,
+      {String? filterSlug}) async {
+    if (query.trim().isEmpty && (filterSlug == null || filterSlug.isEmpty)) {
+      return [];
+    }
     try {
+      final params = <String, dynamic>{};
+      if (query.trim().isNotEmpty) params['q'] = query;
+      if (filterSlug != null && filterSlug.isNotEmpty) {
+        params['filter'] = filterSlug;
+      }
       final response = await _apiClient.get(
         ApiConstants.foodSearch,
-        queryParameters: {'q': query},
+        queryParameters: params,
       );
       final list = response.data as List? ?? [];
       return list.map((item) => item as Map<String, dynamic>).toList();
@@ -133,13 +169,56 @@ class NutritionProvider extends ChangeNotifier {
     }
   }
 
-  /// Direct POST to /nutrition/ with a pre-built payload map.
-  Future<void> postNutritionLog(Map<String, dynamic> payload) async {
-    await _apiClient.post(ApiConstants.nutrition, data: payload);
-    await loadTodayNutrition();
+  Future<void> loadFoodFilters() async {
+    _loadingFilters = true;
+    _filtersError = null;
+    notifyListeners();
+    try {
+      final response = await _apiClient.get(ApiConstants.foodFilters);
+      final rawList = response.data as List? ?? [];
+      _foodFilters = rawList
+          .map((f) => FoodFilterModel.fromJson(f as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      _filtersError = e.toString();
+      _foodFilters = [];
+    } finally {
+      _loadingFilters = false;
+      notifyListeners();
+    }
   }
 
-  Future<bool> logFood(NutritionModel nutrition) async {
+  void selectFoodFilter(FoodFilterModel? filter) {
+    _selectedFoodFilter = filter;
+    notifyListeners();
+  }
+
+  // ── Write endpoints ────────────────────────────────────────────────────────
+
+  /// POST a new nutrition log and refresh the correct date summary.
+  ///
+  /// [selectedDate] must match the `date` field in [payload].
+  /// If null, today is assumed.
+  Future<void> postNutritionLog(
+    Map<String, dynamic> payload, {
+    DateTime? selectedDate,
+  }) async {
+    final targetDate = selectedDate ?? DateTime.now();
+    final key = dateKey(targetDate);
+
+    debugPrint('[NutritionProvider] POST /nutrition/ key=$key payload=$payload');
+
+    await _apiClient.post(ApiConstants.nutrition, data: payload);
+
+    if (_isSameDate(targetDate, DateTime.now())) {
+      await loadTodayNutrition();
+    } else {
+      await loadNutritionForDate(key);
+    }
+  }
+
+  Future<bool> logFood(NutritionModel nutrition,
+      {DateTime? selectedDate}) async {
     _setLoading(true);
     _setError(null);
     try {
@@ -154,7 +233,12 @@ class NutritionProvider extends ChangeNotifier {
           data: nutrition.toJson(),
         );
       }
-      await loadTodayNutrition();
+      final date = selectedDate ?? nutrition.consumedAt;
+      if (_isSameDate(date, DateTime.now())) {
+        await loadTodayNutrition();
+      } else {
+        await loadNutritionForDate(dateKey(date));
+      }
       return true;
     } catch (e) {
       _setError(e.toString());
@@ -163,12 +247,17 @@ class NutritionProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> deleteLog(String id) async {
+  Future<bool> deleteLog(String id, {DateTime? forDate}) async {
     _setLoading(true);
     _setError(null);
     try {
       await _apiClient.delete('${ApiConstants.nutrition}$id');
-      await loadTodayNutrition();
+      final date = forDate ?? DateTime.now();
+      if (_isSameDate(date, DateTime.now())) {
+        await loadTodayNutrition();
+      } else {
+        await loadNutritionForDate(dateKey(date));
+      }
       return true;
     } catch (e) {
       _setError(e.toString());
@@ -177,19 +266,14 @@ class NutritionProvider extends ChangeNotifier {
     }
   }
 
-  // ── Nutrient cache for micronutrient dashboard ──────────────────────────────
+  // ── Nutrient cache ─────────────────────────────────────────────────────────
 
   final Map<String, List<Map<String, dynamic>>> _nutrientCache = {};
 
-  /// Fetches the full nutrient breakdown for a food.
-  /// Tries [fdcId] first; falls back to searching by [foodName] to resolve
-  /// an fdc_id and then fetching nutrients.
-  /// Results are cached in memory for the lifetime of the provider.
   Future<List<Map<String, dynamic>>> getNutrients({
     int? fdcId,
     String? foodName,
   }) async {
-    // ── Try fdcId first ──────────────────────────────────────────────────────
     if (fdcId != null) {
       final key = fdcId.toString();
       if (_nutrientCache.containsKey(key)) return _nutrientCache[key]!;
@@ -204,7 +288,6 @@ class NutritionProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // ── Fallback: search by food name → resolve fdc_id → fetch nutrients ──
     if (foodName != null && foodName.isNotEmpty) {
       final cacheKey = 'name:$foodName';
       if (_nutrientCache.containsKey(cacheKey)) {
@@ -236,4 +319,3 @@ class NutritionProvider extends ChangeNotifier {
     return [];
   }
 }
-

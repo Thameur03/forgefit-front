@@ -1,9 +1,32 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../auth/widgets/onboarding_widgets.dart';
 import '../models/muscle_volume_model.dart';
+
+// ── Intensity palette ─────────────────────────────────────────────────────────
+// Based on weekly set count: 0=untrained, 1-5=low, 6-11=moderate, 12+=high
+
+enum MuscleIntensity { untrained, low, moderate, high }
+
+Color muscleIntensityColor(MuscleIntensity i) {
+  switch (i) {
+    case MuscleIntensity.untrained:
+      return const Color(0xFF2A2D3A); // muted navy-gray
+    case MuscleIntensity.low:
+      return const Color(0xFF2563EB); // cool blue
+    case MuscleIntensity.moderate:
+      return const Color(0xFF06B6D4); // cyan
+    case MuscleIntensity.high:
+      return const Color(0xFF22C55E); // vibrant green
+  }
+}
+
+MuscleIntensity setsToIntensity(int sets) {
+  if (sets <= 0) return MuscleIntensity.untrained;
+  if (sets <= 5) return MuscleIntensity.low;
+  if (sets <= 11) return MuscleIntensity.moderate;
+  return MuscleIntensity.high;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC WIDGET
@@ -37,6 +60,9 @@ class _MuscleMapWidgetState extends State<MuscleMapWidget> {
         ),
         const SizedBox(height: 12),
         // ── Muscle map canvas ─────────────────────────────────────────────
+        // IMPORTANT: Expanded requires a bounded-height parent.
+        // This widget must always be wrapped in SizedBox(height: N)
+        // by the caller (e.g. stats_screen.dart SizedBox(height:340)).
         Expanded(
           child: LayoutBuilder(
             builder: (ctx, constraints) {
@@ -69,6 +95,7 @@ class _MuscleMapWidgetState extends State<MuscleMapWidget> {
 }
 
 // ── Front / Back Toggle ───────────────────────────────────────────────────────
+// Matches WorkoutListScreen._buildTabPills exactly.
 
 class _ViewToggle extends StatelessWidget {
   final bool showFront;
@@ -78,46 +105,44 @@ class _ViewToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _TogglePill(label: 'Front', active: showFront, onTap: () => onToggle(true)),
-        const SizedBox(width: 8),
-        _TogglePill(label: 'Back', active: !showFront, onTap: () => onToggle(false)),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: OnboardingTheme.card,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: OnboardingTheme.border),
+        ),
+        child: Row(
+          children: [
+            _pill('Front', showFront, () => onToggle(true)),
+            _pill('Back', !showFront, () => onToggle(false)),
+          ],
+        ),
+      ),
     );
   }
-}
 
-class _TogglePill extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _TogglePill({required this.label, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          gradient: active
-              ? const LinearGradient(
-                  colors: [OnboardingTheme.gradientStart, OnboardingTheme.gradientEnd],
-                )
-              : null,
-          color: active ? null : OnboardingTheme.cardDark,
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: active ? Colors.white : Colors.white60,
+  Widget _pill(String label, bool active, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: active ? OnboardingTheme.accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? Colors.white : Colors.white60,
+              fontSize: 13,
+              fontWeight: active ? FontWeight.bold : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -126,49 +151,44 @@ class _TogglePill extends StatelessWidget {
 }
 
 // ── Legend ────────────────────────────────────────────────────────────────────
+// Compact, subtle — does not compete with the map.
 
 class _Legend extends StatelessWidget {
+  const _Legend();
+
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _LegendDot(color: OnboardingTheme.cardMid, label: 'Untrained'),
+        _dot(muscleIntensityColor(MuscleIntensity.untrained), 'None'),
         const SizedBox(width: 12),
-        _LegendDot(
-            color: OnboardingTheme.accent.withValues(alpha: 0.5),
-            label: 'Low'),
+        _dot(muscleIntensityColor(MuscleIntensity.low), 'Low'),
         const SizedBox(width: 12),
-        _LegendDot(color: OnboardingTheme.accent, label: 'Medium'),
+        _dot(muscleIntensityColor(MuscleIntensity.moderate), 'Med'),
         const SizedBox(width: 12),
-        _LegendDot(color: OnboardingTheme.success, label: 'High'),
+        _dot(muscleIntensityColor(MuscleIntensity.high), 'High'),
       ],
     );
   }
-}
 
-class _LegendDot extends StatelessWidget {
-  final Color color;
-  final String label;
-
-  const _LegendDot({required this.color, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _dot(Color color, String label) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 10,
-          height: 10,
+          width: 8,
+          height: 8,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+        Text(label,
+            style: const TextStyle(fontSize: 10, color: Colors.white38)),
       ],
     );
   }
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CUSTOM PAINTER
@@ -188,20 +208,13 @@ class _BodyPainter extends CustomPainter {
     required this.size,
   });
 
-  // ── Intensity colour ──────────────────────────────────────────────────────
+  // ── Intensity colour (set-count based) ───────────────────────────────────
+  // Uses totalSets from MuscleVolumeModel: 0=gray, 1-5=blue, 6-11=cyan, 12+=green
 
   Color _muscleColor(String group) {
-    if (muscleData.isEmpty) return OnboardingTheme.cardMid;
     final item = muscleData.where((m) => m.muscleGroup == group).firstOrNull;
-    if (item == null) return OnboardingTheme.cardMid;
-
-    final maxVol = muscleData.map((m) => m.totalVolumeKg).reduce(math.max);
-    if (maxVol <= 0) return OnboardingTheme.cardMid;
-
-    final ratio = item.totalVolumeKg / maxVol;
-    if (ratio < 0.33) return OnboardingTheme.accent.withValues(alpha: 0.5);
-    if (ratio < 0.67) return OnboardingTheme.accent;
-    return OnboardingTheme.success;
+    final sets = item?.totalSets ?? 0;
+    return muscleIntensityColor(setsToIntensity(sets));
   }
 
   // ── Hit test ──────────────────────────────────────────────────────────────
@@ -311,7 +324,8 @@ class _BodyPainter extends CustomPainter {
     _drawMuscle(canvas, 'Chest', _chestPath());
     _drawMuscle(canvas, 'Shoulders', _frontShoulderPath());
     _drawMuscle(canvas, 'Biceps', _bicepsPath());
-    _drawMuscle(canvas, 'Abs', _absPath());
+    // Key must match MuscleGroup.core.painterKey == 'Core'
+    _drawMuscle(canvas, 'Core', _absPath());
     _drawMuscle(canvas, 'Quads', _quadsPath());
     _drawMuscle(canvas, 'Calves', _frontCalvesPath());
   }

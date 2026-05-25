@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/nutrition_provider.dart';
 import '../models/nutrition_model.dart';
+import '../screens/add_food_screen.dart';
 import '../../workout/providers/workout_provider.dart';
 import '../../../core/network/api_client.dart';
 
@@ -362,15 +363,27 @@ class _NutritionScreenState extends State<NutritionScreen> {
       );
     }
 
-    final summary = provider.todaySummary;
-    final logs = provider.todayLogs;
+    final dateKeyStr = NutritionProvider.dateKey(_selectedDate);
+    final summary = provider.summaryForDate(dateKeyStr);
+    final logs = provider.logsForDate(dateKeyStr);
     final protein = summary?.totalProtein ?? 0.0;
     final carbs = summary?.totalCarbs ?? 0.0;
     final fat = summary?.totalFat ?? 0.0;
     final consumed = summary?.totalCalories ?? 0.0;
 
     return RefreshIndicator(
-      onRefresh: () => provider.loadTodayNutrition(),
+      onRefresh: () async {
+        final now = DateTime.now();
+        final selDay = DateTime(
+            _selectedDate.year, _selectedDate.month, _selectedDate.day);
+        final today = DateTime(now.year, now.month, now.day);
+        if (selDay == today) {
+          await provider.loadTodayNutrition();
+        } else {
+          await provider.loadNutritionForDate(
+              NutritionProvider.dateKey(_selectedDate));
+        }
+      },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
         children: [
@@ -481,13 +494,20 @@ class _NutritionScreenState extends State<NutritionScreen> {
                 proteinColor: _proteinColor,
                 carbsColor: _carbsColor,
                 fatColor: _fatColor,
-                onTap: () => Navigator.pushNamed(
-                  context,
-                  '/nutrition/add-food',
-                  arguments: key,
-                ).then((_) => setState(() {})),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AddFoodScreen(
+                        initialMeal: key,
+                        selectedDate: _selectedDate,
+                      ),
+                    ),
+                  ).then((_) => setState(() {})),
                 onDeleteLog: (log) async {
-                  await context.read<NutritionProvider>().deleteLog(log.id);
+                  await context.read<NutritionProvider>().deleteLog(
+                        log.id,
+                        forDate: _selectedDate,
+                      );
                 },
                 onEditLog: (log) => _showEditFoodSheet(context, log),
               ),
@@ -615,10 +635,15 @@ class _NutritionScreenState extends State<NutritionScreen> {
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed: () => Navigator.pushNamed(
+          onPressed: () => Navigator.push(
             context,
-            '/nutrition/add-food',
-            arguments: 'breakfast',
+            MaterialPageRoute(
+              builder: (_) => AddFoodScreen(
+                // empty string = show meal picker before saving
+                initialMeal: '',
+                selectedDate: _selectedDate,
+              ),
+            ),
           ).then((_) => setState(() {})),
           icon: const Icon(Icons.add),
           label: const Text('Add Food'),

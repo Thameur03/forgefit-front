@@ -26,19 +26,22 @@ class _AICoachContentState extends State<AICoachContent> {
   Widget build(BuildContext context) {
     return Consumer<AICoachProvider>(
       builder: (context, provider, _) {
-        if (provider.isLoading) {
+        if (provider.isLoading && provider.summary == null) {
           return const _LoadingState();
         }
-        if (provider.error != null) {
+        if (provider.error != null && provider.summary == null) {
           return _ErrorState(
             error: provider.error!,
-            onRetry: () => provider.loadSummary(days: 7, forceRefresh: true),
+            onRetry: () => provider.refreshSummary(days: 7),
           );
         }
         if (provider.summary == null) {
           return const _EmptyState();
         }
-        return _SummaryView(summary: provider.summary!);
+        return _SummaryView(
+          summary: provider.summary!,
+          isRefreshing: provider.isLoading,
+        );
       },
     );
   }
@@ -139,44 +142,83 @@ class _EmptyState extends StatelessWidget {
 // ── Main summary view ────────────────────────────────────────────────────
 class _SummaryView extends StatelessWidget {
   final AICoachSummaryModel summary;
-  const _SummaryView({required this.summary});
+  final bool isRefreshing;
+  const _SummaryView({required this.summary, this.isRefreshing = false});
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _ReadinessScoreCard(summary: summary),
-          const SizedBox(height: 16),
-          _SubScoreRow(summary: summary),
-          const SizedBox(height: 12),
-          _ConfidenceChip(
-            confidence: summary.confidence,
-            reason: summary.confidenceReason,
-          ),
-          const SizedBox(height: 16),
-          _CoachSummaryCard(text: summary.summary),
-          if (summary.nextBestAction != null) ...[
+    return RefreshIndicator(
+      color: OnboardingTheme.accent,
+      backgroundColor: OnboardingTheme.card,
+      onRefresh: () =>
+          context.read<AICoachProvider>().refreshSummary(days: 7),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Top summary area (grouped) ──────────────────────────
+            _ReadinessScoreCard(summary: summary),
+            const SizedBox(height: 12),
+            _SubScoreRow(summary: summary),
+            const SizedBox(height: 12),
+            _ConfidenceChip(
+              confidence: summary.confidence,
+              reason: summary.confidenceReason,
+            ),
+
+            // ── Coach Summary (prominent) ───────────────────────────
+            const SizedBox(height: 16),
+            _CoachSummaryCard(text: summary.summary),
+
+            // ── Recommendations (always visible) ────────────────────
+            const SizedBox(height: 16),
+            summary.recommendations.isNotEmpty
+                ? _RecommendationsSection(
+                    recommendations: summary.recommendations)
+                : _SectionCard(
+                    title: 'Recommendations',
+                    icon: Icons.lightbulb_outline_rounded,
+                    child: const Text(
+                      'No major recommendations right now.',
+                      style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic),
+                    ),
+                  ),
+
+            // ── Next Best Action (always visible) ───────────────────
             const SizedBox(height: 14),
-            _NextBestActionCard(action: summary.nextBestAction!),
-          ],
-          if (summary.warnings.isNotEmpty) ...[
+            _NextBestActionCard(
+              action: (summary.nextBestAction != null &&
+                      summary.nextBestAction!.isNotEmpty)
+                  ? summary.nextBestAction!
+                  : 'Keep following your current plan and continue logging your workouts and meals.',
+            ),
+
+            // ── Warnings ────────────────────────────────────────────
+            if (summary.warnings.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _WarningsSection(warnings: summary.warnings),
+            ],
+
+            // ── Active Training Program ─────────────────────────────
             const SizedBox(height: 16),
-            _WarningsSection(warnings: summary.warnings),
-          ],
-          if (summary.recommendations.isNotEmpty) ...[
+            _ActiveProgramCard(summary: summary),
+
+            // ── Missing Data ────────────────────────────────────────
+            if (summary.missingData.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _MissingDataCard(items: summary.missingData),
+            ],
+
+            // ── Disclaimer ──────────────────────────────────────────
             const SizedBox(height: 16),
-            _RecommendationsSection(recommendations: summary.recommendations),
+            _DisclaimerCard(text: summary.disclaimer),
           ],
-          if (summary.missingData.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _MissingDataCard(items: summary.missingData),
-          ],
-          const SizedBox(height: 16),
-          _DisclaimerCard(text: summary.disclaimer),
-        ],
+        ),
       ),
     );
   }
@@ -399,19 +441,64 @@ class _ConfidenceChip extends StatelessWidget {
   }
 }
 
-// ── Coach Summary Card ───────────────────────────────────────────────────
+// ── Coach Summary Card (prominent, blue glow) ────────────────────────────
 class _CoachSummaryCard extends StatelessWidget {
   final String text;
   const _CoachSummaryCard({required this.text});
 
   @override
   Widget build(BuildContext context) {
-    return _SectionCard(
-      title: 'Coach Summary',
-      icon: Icons.auto_awesome_rounded,
-      child: Text(
-        text,
-        style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: OnboardingTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: OnboardingTheme.accent.withAlpha(50)),
+        boxShadow: [
+          BoxShadow(
+            color: OnboardingTheme.accent.withAlpha(25),
+            blurRadius: 16,
+            spreadRadius: 1,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: OnboardingTheme.accent.withAlpha(25),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.auto_awesome_rounded,
+                    color: OnboardingTheme.accent, size: 18),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Coach Summary',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14.5,
+              height: 1.55,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -635,6 +722,185 @@ class _RecommendationsSection extends StatelessWidget {
           );
         }).toList(),
       ),
+    );
+  }
+}
+
+// ── Active Training Program Card ─────────────────────────────────────────
+class _ActiveProgramCard extends StatelessWidget {
+  final AICoachSummaryModel summary;
+  const _ActiveProgramCard({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasProgram = summary.activeProgramName != null;
+
+    if (!hasProgram) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: OnboardingTheme.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: OnboardingTheme.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.event_note_rounded,
+                  color: Colors.white38, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('No Active Program',
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      )),
+                  SizedBox(height: 2),
+                  Text(
+                    'Set a training program to unlock adherence tracking.',
+                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final adherence = summary.adherencePercent;
+    final days = summary.activeProgramDaysPerWeek;
+    final workouts = summary.workoutsThisPeriod;
+
+    Color adherenceColor;
+    if (adherence != null && adherence >= 80) {
+      adherenceColor = const Color(0xFF00C853);
+    } else if (adherence != null && adherence >= 50) {
+      adherenceColor = const Color(0xFFFFA726);
+    } else {
+      adherenceColor = const Color(0xFFEF5350);
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: OnboardingTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: OnboardingTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: OnboardingTheme.accent.withAlpha(20),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.event_note_rounded,
+                    color: OnboardingTheme.accent, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Active Training Program',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        )),
+                    const SizedBox(height: 2),
+                    Text(
+                      summary.activeProgramName!,
+                      style: const TextStyle(
+                        color: OnboardingTheme.accent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _ProgramMetric(
+                  label: 'Planned',
+                  value: '${days ?? '-'} days/wk',
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ProgramMetric(
+                  label: 'Completed',
+                  value: '$workouts sessions',
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ProgramMetric(
+                  label: 'Adherence',
+                  value: adherence != null
+                      ? '${adherence.round()}%'
+                      : '-',
+                  color: adherenceColor,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProgramMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _ProgramMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(label,
+            style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        const SizedBox(height: 4),
+        Text(value,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            )),
+      ],
     );
   }
 }

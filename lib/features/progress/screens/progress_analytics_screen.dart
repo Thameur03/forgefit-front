@@ -16,7 +16,8 @@ import 'ai_coach_screen.dart';
 enum _AnalyticsTab { workout, nutrition, labInsights }
 
 class ProgressAnalyticsScreen extends StatefulWidget {
-  const ProgressAnalyticsScreen({super.key});
+  final bool showBackButton;
+  const ProgressAnalyticsScreen({super.key, this.showBackButton = false});
 
   @override
   State<ProgressAnalyticsScreen> createState() =>
@@ -90,7 +91,13 @@ class _ProgressAnalyticsScreenState extends State<ProgressAnalyticsScreen> {
   Widget _tabButton(String label, _AnalyticsTab tab, IconData icon) {
     final selected = _tab == tab;
     return GestureDetector(
-      onTap: () => setState(() => _tab = tab),
+      onTap: () {
+        setState(() => _tab = tab);
+        // Refresh AI coach data when switching to Insights tab
+        if (tab == _AnalyticsTab.labInsights) {
+          context.read<AICoachProvider>().loadSummary(days: 7);
+        }
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding:
@@ -133,12 +140,15 @@ class _ProgressAnalyticsScreenState extends State<ProgressAnalyticsScreen> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: Row(
                 children: [
-                  _iconBtn(
-                    Icons.arrow_back_ios_new_rounded,
-                    () => Navigator.pop(context),
-                    iconSize: 18,
-                  ),
-                  const SizedBox(width: 14),
+                  if (widget.showBackButton) ...
+                    [
+                      _iconBtn(
+                        Icons.arrow_back_ios_new_rounded,
+                        () => Navigator.pop(context),
+                        iconSize: 18,
+                      ),
+                      const SizedBox(width: 14),
+                    ],
                   const Expanded(
                     child: Text(
                       'Progress & Analytics',

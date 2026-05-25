@@ -389,6 +389,10 @@ class _WorkoutListScreenState extends State<WorkoutListScreen>
   }
 
   void _showTemplatesBottomSheet() {
+    // Trigger DB template load as soon as the sheet is requested.
+    final programProvider = context.read<ProgramProvider>();
+    programProvider.loadGlobalTemplates();
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -396,134 +400,326 @@ class _WorkoutListScreenState extends State<WorkoutListScreen>
       useSafeArea: true,
       builder: (ctx) {
         final bottomInset = MediaQuery.of(ctx).viewPadding.bottom;
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: const BoxDecoration(
-            color: OnboardingTheme.bg,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: EdgeInsets.only(bottom: bottomInset > 0 ? bottomInset : 0),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: const BoxDecoration(
+                color: OnboardingTheme.bg,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Browse Templates',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
+              padding: EdgeInsets.only(bottom: bottomInset > 0 ? bottomInset : 0),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    GestureDetector(
-                      onTap: () => Navigator.pop(ctx),
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: OnboardingTheme.card,
-                          borderRadius: BorderRadius.circular(16),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Browse Templates',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        child: const Icon(Icons.close,
-                            color: Colors.white60, size: 18),
-                      ),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: OnboardingTheme.card,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(Icons.close,
+                                color: Colors.white60, size: 18),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: LibraryTab.hardcodedPrograms.length,
-                  itemBuilder: (context, index) {
-                    final p = LibraryTab.hardcodedPrograms[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: GestureDetector(
-                        onTap: () async {
-                          Navigator.pop(ctx);
-                          final nav = Navigator.of(this.context);
-                          final provider = this.context.read<ProgramProvider>();
-                          // Show loading
-                          showDialog(
-                            context: this.context,
-                            barrierDismissible: false,
-                            builder: (_) => const Center(
-                              child: CircularProgressIndicator(color: OnboardingTheme.accent),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: Consumer<ProgramProvider>(
+                      builder: (_, provider, __) {
+                        final hardcoded = LibraryTab.hardcodedPrograms;
+                        final dbTemplates = provider.dbTemplates;
+                        final totalCount = hardcoded.length + dbTemplates.length;
+
+                        if (totalCount == 0 && provider.isLoadingDbTemplates) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: OnboardingTheme.accent,
                             ),
                           );
-                          final slug = LibraryTab.hardcodedPrograms[index]['slug']!;
-                          final program = await provider.adoptTemplate(slug);
-                          nav.pop(); // dismiss loader
-                          if (program != null) {
-                            nav.push(
-                              MaterialPageRoute(
-                                builder: (_) => ProgramDetailScreen(programId: program.id),
-                              ),
-                            );
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: OnboardingTheme.card,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: OnboardingTheme.border),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                        }
+
+                        // ── Show error hint if DB templates failed to load ──────
+                        final errorBanner = (provider.dbTemplatesError != null)
+                            ? Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                                child: Text(
+                                  'Could not load AthleteLab templates',
+                                  style: TextStyle(
+                                    color: Colors.redAccent.withAlpha(200),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              )
+                            : const SizedBox.shrink();
+
+                        // ── Loading indicator for DB templates (non-blocking) ──
+                        final loadingChip = provider.isLoadingDbTemplates
+                            ? const Padding(
+                                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                                child: Row(
                                   children: [
-                                    Text(
-                                      p['name']!,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.bold,
+                                    SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        color: OnboardingTheme.accent,
+                                        strokeWidth: 1.5,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    SizedBox(width: 8),
                                     Text(
-                                      '${p['duration']}  •  ${p['frequency']}',
-                                      style: const TextStyle(
-                                        color: Colors.white60,
-                                        fontSize: 13,
-                                      ),
+                                      'Loading AthleteLab templates…',
+                                      style: TextStyle(
+                                          color: Colors.white38, fontSize: 11),
                                     ),
                                   ],
                                 ),
+                              )
+                            : const SizedBox.shrink();
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            loadingChip,
+                            errorBanner,
+                            Expanded(
+                              child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: totalCount,
+                          itemBuilder: (context, index) {
+                            // First: hardcoded templates
+                            if (index < hardcoded.length) {
+                              final p = hardcoded[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _TemplateTile(
+                                  name: p['name']!,
+                                  subtitle: '${p['duration']}  •  ${p['frequency']}',
+                                  badge: 'Built-in',
+                                  badgeColor: Colors.white24,
+                                  onTap: () async {
+                                    Navigator.pop(ctx);
+                                    final nav = Navigator.of(this.context);
+                                    final messenger = ScaffoldMessenger.of(this.context);
+                                    showDialog(
+                                      context: this.context,
+                                      barrierDismissible: false,
+                                      builder: (_) => const Center(
+                                        child: CircularProgressIndicator(
+                                          color: OnboardingTheme.accent,
+                                        ),
+                                      ),
+                                    );
+                                    final slug = p['slug']!;
+                                    final program = await provider.adoptTemplate(slug);
+                                    nav.pop();
+                                    if (program != null) {
+                                      nav.push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              ProgramDetailScreen(programId: program.id),
+                                        ),
+                                      );
+                                    } else {
+                                      messenger.showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Failed to add template.'),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                              );
+                            }
+
+                            // Then: DB (admin-created) templates
+                            final dbIndex = index - hardcoded.length;
+                            final t = dbTemplates[dbIndex];
+                            final sub = t.subtitle.isNotEmpty
+                                ? t.subtitle
+                                : '${t.days.length} Day${t.days.length == 1 ? '' : 's'}';
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _TemplateTile(
+                                name: t.name,
+                                subtitle: sub,
+                                badge: 'AthleteLab',
+                                badgeColor: OnboardingTheme.accent.withAlpha(50),
+                                badgeTextColor: OnboardingTheme.accent,
+                                onTap: () async {
+                                  Navigator.pop(ctx);
+                                  final nav = Navigator.of(this.context);
+                                  final messenger = ScaffoldMessenger.of(this.context);
+                                  showDialog(
+                                    context: this.context,
+                                    barrierDismissible: false,
+                                    builder: (_) => const Center(
+                                      child: CircularProgressIndicator(
+                                        color: OnboardingTheme.accent,
+                                      ),
+                                    ),
+                                  );
+                                  final program = await provider.adoptDbTemplate(t.id);
+                                  nav.pop();
+                                  if (program != null) {
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Program added to your library'),
+                                        backgroundColor: Color(0xFF1A2E1A),
+                                      ),
+                                    );
+                                    nav.push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            ProgramDetailScreen(programId: program.id),
+                                      ),
+                                    );
+                                  } else {
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Failed to add template.'),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
+                                },
                               ),
-                              const Icon(Icons.add_circle, color: OnboardingTheme.accent, size: 24),
-                            ],
-                          ),
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      ),   // Expanded
+                          ],  // Column.children
+                        );   // Column
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                ],
               ),
-              const SizedBox(height: 32),
-            ],
-          ),
+            );
+          },
         );
       },
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Private template tile widget
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TemplateTile extends StatelessWidget {
+  final String name;
+  final String subtitle;
+  final String badge;
+  final Color badgeColor;
+  final Color badgeTextColor;
+  final VoidCallback onTap;
+
+  const _TemplateTile({
+    required this.name,
+    required this.subtitle,
+    required this.badge,
+    required this.badgeColor,
+    this.badgeTextColor = Colors.white60,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: OnboardingTheme.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: OnboardingTheme.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: badgeColor,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          badge,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: badgeTextColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.add_circle,
+                color: OnboardingTheme.accent, size: 24),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 

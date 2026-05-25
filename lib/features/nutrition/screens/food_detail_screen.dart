@@ -5,27 +5,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/nutrition_provider.dart';
 import '../../../core/network/api_client.dart';
+import 'add_food_screen.dart' show buildNutritionPayload;
 
-/// Maps UI meal key → backend MealType enum value
-/// Backend enum: Breakfast, Lunch, Dinner, Snack (singular)
-String _toBackendMealName(String meal) {
-  const map = {
-    'breakfast': 'Breakfast',
-    'lunch': 'Lunch',
-    'dinner': 'Dinner',
-    'snacks': 'Snack', // backend enum is singular
-  };
-  return map[meal.toLowerCase()] ?? 'Breakfast';
-}
 
 class FoodDetailScreen extends StatefulWidget {
   final Map<String, dynamic> foodData;
   final String targetMeal;
+  /// Null = today. Passed down from NutritionScreen so the food is saved
+  /// under the date the user is currently viewing.
+  final DateTime? selectedDate;
 
   const FoodDetailScreen({
     super.key,
     required this.foodData,
     required this.targetMeal,
+    this.selectedDate,
   });
 
   @override
@@ -38,13 +32,14 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
   bool _isSaving = false;
   bool _isFavorite = false;
 
-  // Base values per 100g
+  // Base values per 100g (backend always returns per-100g after the fix)
   late final String _foodName;
   late final String _brand;
   late final double _baseCalories;
   late final double _baseProtein;
   late final double _baseCarbs;
   late final double _baseFat;
+  late final int? _fdcId;
 
   // Micronutrients
   List<Map<String, dynamic>> _nutrients = [];
@@ -66,11 +61,12 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
     super.initState();
     final food = widget.foodData;
     _foodName = food['name'] as String? ?? 'Unknown Food';
-    _brand = food['brand'] as String? ?? '';
+    _brand    = food['brand'] as String? ?? '';
     _baseCalories = (food['calories'] as num?)?.toDouble() ?? 0.0;
-    _baseProtein = (food['protein_g'] as num?)?.toDouble() ?? 0.0;
-    _baseCarbs = (food['carbs_g'] as num?)?.toDouble() ?? 0.0;
-    _baseFat = (food['fat_g'] as num?)?.toDouble() ?? 0.0;
+    _baseProtein  = (food['protein_g'] as num?)?.toDouble() ?? 0.0;
+    _baseCarbs    = (food['carbs_g'] as num?)?.toDouble() ?? 0.0;
+    _baseFat      = (food['fat_g'] as num?)?.toDouble() ?? 0.0;
+    _fdcId        = food['fdc_id'] == null ? null : int.tryParse(food['fdc_id'].toString());
     _quantityController = TextEditingController(text: '100');
     _checkFavorite();
     _fetchNutrients();
@@ -105,12 +101,12 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
     }
   }
 
-  // ── Scaled values ───────────────────────────────────────────────────────────
+  // ── Scaled values (backend values are per 100g) ─────────────────────────────
 
   double get _calories => (_baseCalories / 100) * _quantity;
-  double get _protein => (_baseProtein / 100) * _quantity;
-  double get _carbs => (_baseCarbs / 100) * _quantity;
-  double get _fat => (_baseFat / 100) * _quantity;
+  double get _protein  => (_baseProtein  / 100) * _quantity;
+  double get _carbs    => (_baseCarbs    / 100) * _quantity;
+  double get _fat      => (_baseFat      / 100) * _quantity;
 
   void _changeQuantity(int delta) {
     setState(() {
@@ -136,11 +132,11 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
   Future<void> _checkFavorite() async {
     final prefs = await SharedPreferences.getInstance();
     final favs = prefs.getStringList(_favKey) ?? [];
-    final fdcId = widget.foodData['fdc_id']?.toString() ?? _foodName;
+    final id = _fdcId?.toString() ?? _foodName;
     final isFav = favs.any((f) {
       try {
         final m = jsonDecode(f) as Map<String, dynamic>;
-        return m['fdc_id']?.toString() == fdcId;
+        return m['fdc_id']?.toString() == id;
       } catch (_) {
         return false;
       }
@@ -151,13 +147,13 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
   Future<void> _toggleFavorite() async {
     final prefs = await SharedPreferences.getInstance();
     final favs = prefs.getStringList(_favKey) ?? [];
-    final fdcId = widget.foodData['fdc_id']?.toString() ?? _foodName;
+    final id = _fdcId?.toString() ?? _foodName;
 
     if (_isFavorite) {
       favs.removeWhere((f) {
         try {
           final m = jsonDecode(f) as Map<String, dynamic>;
-          return m['fdc_id']?.toString() == fdcId;
+          return m['fdc_id']?.toString() == id;
         } catch (_) {
           return false;
         }
@@ -181,22 +177,42 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
       );
       return;
     }
-
+    if (_isSaving) return;
     setState(() => _isSaving = true);
+
+    // Resolve meal: if targetMeal is empty (shouldn't normally happen once
+    // the meal picker is wired up) fall back to 'breakfast' as a safe default.
+    final mealKey = widget.targetMeal.trim().isEmpty
+        ? 'breakfast'
+        : widget.targetMeal.trim();
+
     final provider = context.read<NutritionProvider>();
-    final backendMealName = _toBackendMealName(widget.targetMeal);
+    final targetDate = widget.selectedDate ?? DateTime.now();
+
+    // Use the shared payload builder — guaranteed non-empty meal_name,
+    // explicit date, no extra UI-only fields.
+    final body = buildNutritionPayload(
+      selectedDate: targetDate,
+      mealKey:      mealKey,
+      food:         {
+        'name':    _foodName,
+        'fdc_id':  _fdcId,
+        // Passing scaled values so the builder uses them directly.
+        // The builder expects raw food values but we override the
+        // calories/protein/carbs/fat params below.
+      },
+      calories: _calories,
+      protein:  _protein,
+      carbs:    _carbs,
+      fat:      _fat,
+    );
+
+    debugPrint('[FoodDetail] selectedDate=${widget.selectedDate} '
+        'mealKey=$mealKey payload=$body');
 
     try {
-      await provider.postNutritionLog({
-        'food_name': _foodName,
-        'meal_name': backendMealName,
-        'calories': _calories,
-        'protein_g': _protein,
-        'carbs_g': _carbs,
-        'fat_g': _fat,
-        'fdc_id': widget.foodData['fdc_id'], // Part 4: include fdc_id
-      });
-      if (mounted) Navigator.of(context).pop();
+      await provider.postNutritionLog(body, selectedDate: targetDate);
+      if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

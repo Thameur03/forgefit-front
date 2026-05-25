@@ -555,6 +555,45 @@ class WorkoutProvider extends ChangeNotifier {
     }
   }
 
+  /// Loads detailed workout data (with sets) for PR baseline comparison.
+  ///
+  /// [GET /workouts/] only returns summaries — no `sets` field.
+  /// This method fetches each workout individually to get full set details.
+  /// Fetches up to [limit] previous workouts.
+  Future<List<WorkoutModel>> loadDetailedWorkoutsForPrBaseline({
+    int limit = 50,
+  }) async {
+    // Ensure summary list is loaded (uses cached if already loaded).
+    if (_workouts.isEmpty) {
+      await loadWorkouts();
+    }
+
+    final summaries = _workouts.take(limit).toList();
+    debugPrint('[PR Baseline] fetching details for ${summaries.length} workouts');
+
+    final detailed = <WorkoutModel>[];
+    for (final summary in summaries) {
+      try {
+        final response =
+            await _apiClient.get('${ApiConstants.workouts}${summary.id}');
+        final detail = WorkoutModel.fromJson(
+            response.data as Map<String, dynamic>);
+        if (detail.sets.isNotEmpty) {
+          detailed.add(detail);
+        }
+      } catch (_) {
+        // Skip workouts that fail to load.
+      }
+    }
+
+    debugPrint(
+      '[PR Baseline] loaded ${detailed.length} workouts with sets '
+      '(${detailed.fold(0, (s, w) => s + w.sets.length)} total sets)',
+    );
+    return detailed;
+  }
+
+
   /// Creates a new empty workout and returns its server-assigned ID.
   Future<String?> createWorkout() async {
     try {

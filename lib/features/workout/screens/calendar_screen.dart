@@ -402,12 +402,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _showScheduleSheet(DateTime date) {
+    final dateKey = DateTime(date.year, date.month, date.day);
+    final existing =
+        context.read<ScheduleProvider>().scheduledByDate[dateKey];
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => ScheduleWorkoutSheet(selectedDate: date),
+      builder: (_) => ScheduleWorkoutSheet(
+        selectedDate: date,
+        existingScheduled: existing,
+      ),
     );
   }
 

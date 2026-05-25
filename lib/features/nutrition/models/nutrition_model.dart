@@ -41,7 +41,7 @@ class NutritionModel {
       protein: (json['protein_g'] ?? 0).toDouble(),
       carbs: (json['carbs_g'] ?? 0).toDouble(),
       fat: (json['fat_g'] ?? 0).toDouble(),
-      fdcId: json['fdc_id'] as int?,
+      fdcId: json['fdc_id'] == null ? null : int.tryParse(json['fdc_id'].toString()),
     );
   }
 
@@ -73,7 +73,7 @@ class NutritionModel {
       protein: (data['protein_g'] as num?)?.toDouble() ?? 0.0,
       carbs: (data['carbs_g'] as num?)?.toDouble() ?? 0.0,
       fat: (data['fat_g'] as num?)?.toDouble() ?? 0.0,
-      fdcId: data['fdc_id'] as int?,
+      fdcId: data['fdc_id'] == null ? null : int.tryParse(data['fdc_id'].toString()),
     );
   }
 }
