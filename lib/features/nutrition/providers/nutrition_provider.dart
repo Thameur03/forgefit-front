@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/api_client.dart';
 import '../models/nutrition_model.dart';
@@ -199,6 +200,9 @@ class NutritionProvider extends ChangeNotifier {
   ///
   /// [selectedDate] must match the `date` field in [payload].
   /// If null, today is assumed.
+  ///
+  /// Throws a user-readable String on failure so callers (e.g. FoodDetailScreen)
+  /// can surface it in a SnackBar.
   Future<void> postNutritionLog(
     Map<String, dynamic> payload, {
     DateTime? selectedDate,
@@ -206,13 +210,38 @@ class NutritionProvider extends ChangeNotifier {
     final targetDate = selectedDate ?? DateTime.now();
     final key = dateKey(targetDate);
 
-    debugPrint('[NutritionProvider] POST /nutrition/ key=$key payload=$payload');
+    debugPrint('[NutritionProvider] addFood body=${payload.map((k, v) => MapEntry(k, v.toString()))}');
 
-    await _apiClient.post(ApiConstants.nutrition, data: payload);
+    try {
+      final response = await _apiClient.post(ApiConstants.nutrition, data: payload);
+      debugPrint('[NutritionProvider] addFood status=${response.statusCode}');
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      final detail = e.response?.data;
+      String msg;
+      if (detail is Map && detail['detail'] != null) {
+        final d = detail['detail'];
+        if (d is List && d.isNotEmpty) {
+          msg = d.map((item) => item['msg'] ?? item.toString()).join(', ');
+        } else {
+          msg = d.toString();
+        }
+      } else {
+        msg = 'Failed to save food log (status $status)';
+      }
+      debugPrint('[NutritionProvider] addFood error=$msg');
+      throw msg;
+    } catch (e) {
+      debugPrint('[NutritionProvider] addFood error=$e');
+      throw 'Unexpected error saving food log: $e';
+    }
 
+    // ── Refresh the correct date so the UI updates immediately ──────────────
     if (_isSameDate(targetDate, DateTime.now())) {
+      debugPrint('[NutritionProvider] refreshToday after addFood');
       await loadTodayNutrition();
     } else {
+      debugPrint('[NutritionProvider] refreshDate=$key after addFood');
       await loadNutritionForDate(key);
     }
   }

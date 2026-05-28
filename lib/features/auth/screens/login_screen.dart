@@ -40,15 +40,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (success) {
       Navigator.pushReplacementNamed(context, '/home');
-    } else if (authProvider.errorMessage != null &&
-        authProvider.errorMessage!.contains('verify your email')) {
-      // Redirect to verification screen
-      Navigator.pushNamed(
-        context,
-        '/verify-email',
-        arguments: _emailController.text.trim(),
-      );
     }
+    // Beta: 403 "please verify email" no longer occurs because backend verification
+    // is disabled via REQUIRE_EMAIL_VERIFICATION=false. Any error is shown in
+    // the error banner above the login button by the Consumer<AuthProvider> widget.
   }
 
   @override

@@ -63,21 +63,25 @@ class _ProfileSummaryScreenState extends State<ProfileSummaryScreen>
 
     if (success) {
       setState(() => _success = true);
-
-      // Save email before reset
-      final email = op.email;
       op.reset();
 
       // Short delay to show checkmark
       await Future.delayed(const Duration(milliseconds: 800));
       if (!mounted) return;
 
-      // Navigate to email verification screen
+      // Beta: email verification is disabled — navigate to login with success message.
+      // EmailVerificationScreen is intentionally NOT navigated to during beta.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Account created! Please log in.'),
+          backgroundColor: Color(0xFF3B82F6),
+          duration: Duration(seconds: 3),
+        ),
+      );
       Navigator.pushNamedAndRemoveUntil(
         context,
-        '/verify-email',
+        '/login',
         (r) => false,
-        arguments: email,
       );
     }
   }
