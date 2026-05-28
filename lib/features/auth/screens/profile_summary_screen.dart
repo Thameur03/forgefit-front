@@ -63,28 +63,49 @@ class _ProfileSummaryScreenState extends State<ProfileSummaryScreen>
 
     if (success) {
       setState(() => _success = true);
+
+      // Capture credentials BEFORE reset() clears them
+      final email = op.email;
+      final password = op.password;
       op.reset();
 
       // Short delay to show checkmark
       await Future.delayed(const Duration(milliseconds: 800));
       if (!mounted) return;
 
-      // Beta: email verification is disabled — navigate to login with success message.
-      // EmailVerificationScreen is intentionally NOT navigated to during beta.
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created! Please log in.'),
-          backgroundColor: Color(0xFF3B82F6),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/login',
-        (r) => false,
-      );
+      // Beta: auto-login immediately after registration.
+      // Backend creates user with is_verified=true when REQUIRE_EMAIL_VERIFICATION=false.
+      // We skip the login screen entirely and go straight into the app.
+      final loginSuccess = await auth.login(email, password);
+      if (!mounted) return;
+
+      if (loginSuccess) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/home',
+          (r) => false,
+        );
+      } else {
+        // Auto-login failed (e.g. backend flag not yet set on Render).
+        // Fall back to login screen with a helpful message.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Account created! Please log in to continue.',
+            ),
+            backgroundColor: Color(0xFF3B82F6),
+            duration: Duration(seconds: 4),
+          ),
+        );
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/login',
+          (r) => false,
+        );
+      }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
