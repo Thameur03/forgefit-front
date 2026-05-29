@@ -295,89 +295,43 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
     });
   }
 
-  // Whole card tap → go to food detail
-  // If initialMeal is empty (general Add Food), show a meal picker first.
+  // Whole card tap → go to food detail in selection mode.
+  // No pre-detail meal picker — meal is chosen later in the Save sheet.
   void _openFoodDetail(Map<String, dynamic> foodData) {
-    if (widget.initialMeal.isEmpty) {
-      _showMealPickerThenDetail(foodData);
-    } else {
-      _pushFoodDetail(foodData, widget.initialMeal);
-    }
+    _pushFoodDetail(foodData, widget.initialMeal);
   }
 
-  void _pushFoodDetail(Map<String, dynamic> foodData, String meal) {
-    Navigator.pushNamed(
+  Future<void> _pushFoodDetail(
+      Map<String, dynamic> foodData, String meal) async {
+    debugPrint('[AddFoodScreen] opening FoodDetailScreen selectionMode=true '
+        'food=${foodData['name']} meal=${meal.isEmpty ? '(none)' : meal}');
+
+    final result = await Navigator.pushNamed(
       context,
       '/nutrition/food-detail',
       arguments: {
-        'foodData':     foodData,
-        'targetMeal':   meal,
-        'selectedDate': widget.selectedDate,
+        'foodData':      foodData,
+        'targetMeal':    meal,
+        'selectedDate':  widget.selectedDate,
+        'selectionMode': true,        // <─ key change: no POST from detail
       },
-    ).then((_) => _loadFavorites());
-  }
+    );
 
-  /// Shows a bottom sheet asking which meal to add to, then opens FoodDetailScreen.
-  void _showMealPickerThenDetail(Map<String, dynamic> foodData) {
-    const meals = [
-      ('Breakfast', 'breakfast'),
-      ('Lunch',     'lunch'),
-      ('Dinner',    'dinner'),
-      ('Snack',     'snacks'),
-    ];
-    showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40, height: 4,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                  color: Colors.white30,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
-              child: Text(
-                'Add to…',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 4),
-            ...meals.map(
-              (m) => ListTile(
-                leading: Icon(
-                  _mealIcon(m.$2),
-                  color: Theme.of(ctx).colorScheme.primary,
-                ),
-                title: Text(m.$1),
-                onTap: () => Navigator.of(ctx).pop(m.$2),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    ).then((chosenMeal) {
-      if (chosenMeal != null && mounted) {
-        _pushFoodDetail(foodData, chosenMeal);
-      }
-    });
-  }
+    // Reload favourites regardless of whether a food was selected
+    _loadFavorites();
 
-  static IconData _mealIcon(String meal) {
-    switch (meal) {
-      case 'breakfast': return Icons.free_breakfast;
-      case 'lunch':     return Icons.lunch_dining;
-      case 'dinner':    return Icons.restaurant;
-      default:          return Icons.cookie;
+    if (!mounted) return;
+
+    // result is the payload map returned by FoodDetailScreen in selection mode
+    if (result is Map<String, dynamic>) {
+      debugPrint('[AddFoodScreen] selected from detail=${result['food_name']}');
+      setState(() {
+        _loggedItems.add(_LoggedItem(
+          id:       UniqueKey().toString(),
+          food:     result,
+          quantity: (result['_quantity'] as num?)?.toDouble() ?? 100.0,
+        ));
+      });
     }
   }
 

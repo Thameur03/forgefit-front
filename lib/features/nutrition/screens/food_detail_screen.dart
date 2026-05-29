@@ -15,11 +15,17 @@ class FoodDetailScreen extends StatefulWidget {
   /// under the date the user is currently viewing.
   final DateTime? selectedDate;
 
+  /// When true, the Add button returns the selected food payload to the caller
+  /// (e.g. AddFoodScreen) via Navigator.pop — no backend POST happens.
+  /// When false (default), the food is saved directly to the backend.
+  final bool selectionMode;
+
   const FoodDetailScreen({
     super.key,
     required this.foodData,
     required this.targetMeal,
     this.selectedDate,
+    this.selectionMode = false,
   });
 
   @override
@@ -178,28 +184,41 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
       return;
     }
     if (_isSaving) return;
-    setState(() => _isSaving = true);
 
-    // Resolve meal: if targetMeal is empty (shouldn't normally happen once
-    // the meal picker is wired up) fall back to 'breakfast' as a safe default.
     final mealKey = widget.targetMeal.trim().isEmpty
         ? 'breakfast'
         : widget.targetMeal.trim();
 
+    // ── Selection mode: return payload to AddFoodScreen, no POST ─────────────
+    if (widget.selectionMode) {
+      debugPrint('[FoodDetailScreen] selectionMode=true returning food=$_foodName meal=$mealKey');
+      final payload = <String, dynamic>{
+        'name':      _foodName,
+        'food_name': _foodName,
+        'calories':  _calories,
+        'protein_g': _protein,
+        'carbs_g':   _carbs,
+        'fat_g':     _fat,
+        if (_fdcId != null) 'fdc_id': _fdcId,
+        '_meal':     mealKey,
+        '_quantity': _quantity.toDouble(),
+      };
+      Navigator.of(context).pop(payload);
+      return;
+    }
+
+    // ── Direct-save mode: POST immediately (used outside AddFoodScreen) ───────
+    setState(() => _isSaving = true);
+
     final provider = context.read<NutritionProvider>();
     final targetDate = widget.selectedDate ?? DateTime.now();
 
-    // Use the shared payload builder — guaranteed non-empty meal_name,
-    // explicit date, no extra UI-only fields.
     final body = buildNutritionPayload(
       selectedDate: targetDate,
       mealKey:      mealKey,
       food:         {
         'name':    _foodName,
         'fdc_id':  _fdcId,
-        // Passing scaled values so the builder uses them directly.
-        // The builder expects raw food values but we override the
-        // calories/protein/carbs/fat params below.
       },
       calories: _calories,
       protein:  _protein,
@@ -539,7 +558,8 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
           child: ElevatedButton(
-            onPressed: _isSaving ? null : _addToMeal,
+            // In selection mode the action is instant, so disable during POST only
+            onPressed: (_isSaving && !widget.selectionMode) ? null : _addToMeal,
             style: ElevatedButton.styleFrom(
               backgroundColor: theme.colorScheme.primary,
               foregroundColor: Colors.white,
@@ -548,7 +568,7 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
                 borderRadius: BorderRadius.circular(30),
               ),
             ),
-            child: _isSaving
+            child: (_isSaving && !widget.selectionMode)
                 ? const SizedBox(
                     width: 20,
                     height: 20,
@@ -561,7 +581,9 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
                       const Icon(Icons.add_circle_outline, size: 20),
                       const SizedBox(width: 8),
                       Text(
-                        'Add to $mealLabel',
+                        widget.selectionMode
+                            ? 'Add to Selected'
+                            : 'Add to $mealLabel',
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold),
                       ),

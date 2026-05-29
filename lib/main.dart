@@ -271,9 +271,10 @@ class ForgeFitApp extends StatelessWidget {
         final args = settings.arguments as Map<String, dynamic>;
         return MaterialPageRoute(
           builder: (_) => FoodDetailScreen(
-            foodData:     args['foodData'] as Map<String, dynamic>,
-            targetMeal:   args['targetMeal'] as String? ?? 'breakfast',
-            selectedDate: args['selectedDate'] as DateTime?,
+            foodData:      args['foodData'] as Map<String, dynamic>,
+            targetMeal:    args['targetMeal'] as String? ?? 'breakfast',
+            selectedDate:  args['selectedDate'] as DateTime?,
+            selectionMode: args['selectionMode'] as bool? ?? false,
           ),
         );
       case '/nutrition/macro-targets':
