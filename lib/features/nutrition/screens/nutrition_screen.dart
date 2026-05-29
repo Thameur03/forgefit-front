@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/nutrition_provider.dart';
 import '../models/nutrition_model.dart';
 import '../screens/add_food_screen.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../workout/providers/workout_provider.dart';
 import '../../../core/network/api_client.dart';
 
@@ -53,35 +54,50 @@ class _NutritionScreenState extends State<NutritionScreen> {
     });
   }
 
+  // ── Per-user SharedPreferences key helpers ────────────────────────────────
+
+  String _userId() {
+    // user.id is a non-nullable String once the user is loaded.
+    final user = context.read<AuthProvider>().currentUser;
+    final scope = user != null ? user.id : (user?.email ?? 'guest');
+    debugPrint('[NutritionScreen] pref scope userId=$scope');
+    return scope;
+  }
+
+  String _mealNamesKey()   => 'custom_meal_names_user_${_userId()}';
+  String _calorieKey()     => 'macro_calorie_goal_user_${_userId()}';
+  String _proteinPctKey()  => 'macro_protein_pct_user_${_userId()}';
+  String _carbsPctKey()    => 'macro_carbs_pct_user_${_userId()}';
+  String _fatPctKey()      => 'macro_fat_pct_user_${_userId()}';
+
   Future<void> _loadMacroGoals() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
 
-    // One-time migration: reset corrupted goal values
-    final storedGoal = prefs.getDouble('macro_calorie_goal') ?? 2600;
+    final storedGoal = prefs.getDouble(_calorieKey()) ?? 2600;
     if (storedGoal > 10000 || storedGoal < 500) {
-      await prefs.setDouble('macro_calorie_goal', 2600);
-      await prefs.setDouble('macro_protein_pct', 0.277);
-      await prefs.setDouble('macro_carbs_pct', 0.462);
-      await prefs.setDouble('macro_fat_pct', 0.277);
+      await prefs.setDouble(_calorieKey(), 2600);
+      await prefs.setDouble(_proteinPctKey(), 0.277);
+      await prefs.setDouble(_carbsPctKey(), 0.462);
+      await prefs.setDouble(_fatPctKey(), 0.277);
     }
 
     setState(() {
-      // Clamp to sane range so corrupted values never render
-      _calorieGoal = (prefs.getDouble('macro_calorie_goal') ?? 2600)
+      _calorieGoal = (prefs.getDouble(_calorieKey()) ?? 2600)
           .clamp(500.0, 10000.0);
-      final proteinPct = prefs.getDouble('macro_protein_pct') ?? 0.277;
-      final carbsPct = prefs.getDouble('macro_carbs_pct') ?? 0.462;
-      final fatPct = prefs.getDouble('macro_fat_pct') ?? 0.277;
+      final proteinPct = prefs.getDouble(_proteinPctKey()) ?? 0.277;
+      final carbsPct   = prefs.getDouble(_carbsPctKey())   ?? 0.462;
+      final fatPct     = prefs.getDouble(_fatPctKey())     ?? 0.277;
       _proteinGoal = (_calorieGoal * proteinPct / 4).round();
-      _carbsGoal = (_calorieGoal * carbsPct / 4).round();
-      _fatGoal = (_calorieGoal * fatPct / 9).round();
+      _carbsGoal   = (_calorieGoal * carbsPct   / 4).round();
+      _fatGoal     = (_calorieGoal * fatPct     / 9).round();
     });
   }
 
   Future<void> _loadMealNames() async {
     final prefs = await SharedPreferences.getInstance();
-    final custom = prefs.getStringList('custom_meal_names') ?? [];
+    final custom = prefs.getStringList(_mealNamesKey()) ?? [];
+    debugPrint('[NutritionScreen] loading meal names key=${_mealNamesKey()} custom=$custom');
     if (!mounted) return;
     setState(() {
       _mealNames = ['breakfast', 'lunch', 'dinner', 'snacks', ...custom];
@@ -239,10 +255,11 @@ class _NutritionScreenState extends State<NutritionScreen> {
               final name = controller.text.trim();
               if (name.isEmpty) return;
               final prefs = await SharedPreferences.getInstance();
-              final custom =
-                  prefs.getStringList('custom_meal_names') ?? [];
+              final key   = _mealNamesKey();
+              final custom = prefs.getStringList(key) ?? [];
               custom.add(name.toLowerCase());
-              await prefs.setStringList('custom_meal_names', custom);
+              await prefs.setStringList(key, custom);
+              debugPrint('[NutritionScreen] saved meal names key=$key names=$custom');
               if (mounted) Navigator.pop(context);
               _loadMealNames();
             },

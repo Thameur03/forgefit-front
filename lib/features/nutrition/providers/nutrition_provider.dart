@@ -79,6 +79,22 @@ class NutritionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Wipe all user-specific nutrition state.
+  /// Must be called on logout / account switch so the next user
+  /// never sees stale data from the previous session.
+  void clearUserData() {
+    debugPrint('[NutritionProvider] clearUserData on logout/account switch');
+    _summariesByDate.clear();
+    _logsByDate.clear();
+    _isLoading = false;
+    _errorMessage = null;
+    _foodFilters = [];
+    _selectedFoodFilter = null;
+    _loadingFilters = false;
+    _filtersError = null;
+    notifyListeners();
+  }
+
   void _storeSummary(String key, Map<String, dynamic> data) {
     _summariesByDate[key] = DailyNutritionSummary(
       totalCalories: (data['total_calories'] as num?)?.toDouble() ?? 0.0,

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../auth/providers/auth_provider.dart';
 import '../../auth/widgets/onboarding_widgets.dart';
+import '../../nutrition/providers/nutrition_provider.dart';
 import '../../progress/providers/stats_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -313,6 +314,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (confirmed == true && context.mounted) {
+      // Clear all user-specific provider state BEFORE logout so the next
+      // user on this device starts with a clean slate.
+      context.read<NutritionProvider>().clearUserData();
       await context.read<AuthProvider>().logout();
       if (context.mounted) {
         Navigator.pushNamedAndRemoveUntil(
