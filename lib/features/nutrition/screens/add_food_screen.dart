@@ -101,8 +101,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
   String _query = '';
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
-  int _addedCount = 0;
-  // Prevents duplicate POST when user taps the save button twice
+  // Prevents duplicate POST when user taps the Save button twice
   bool _isSaving = false;
 
   final List<_LoggedItem> _loggedItems = [];
@@ -382,13 +381,11 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
     }
   }
 
-  // + button tap → quick-add bottom sheet
-  // When initialMeal is empty (general Add Food), the sheet shows a meal
-  // dropdown so the user can choose before saving. This prevents an empty
-  // meal_name from being sent to the backend.
+  // + button tap → local-only selection (no backend call)
+  // The food is added to _loggedItems so the user can review it before saving.
+  // The ONLY place that POSTs to backend is _showSaveMealSheet (Save button).
   void _showQuickAddSheet(Map<String, dynamic> food) {
     int quantity = 100;
-    // Start with the pre-selected meal (may be empty for general Add Food).
     String selectedMeal = widget.initialMeal.trim().isEmpty
         ? 'breakfast'
         : widget.initialMeal.trim();
@@ -503,85 +500,55 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // ── Save button ─────────────────────────────────────────
+                // ── Select button (local only — no POST) ────────────────
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isSaving
-                        ? null
-                        : () async {
-                            Navigator.pop(ctx);
+                    onPressed: () {
+                      if (cal <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Calories must be > 0'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
 
-                            if (cal <= 0) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Calories must be > 0'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                              return;
-                            }
+                      // Store the meal choice onto the food map so
+                      // _showSaveMealSheet can use it when building payloads.
+                      final selectedFood = Map<String, dynamic>.from(food)
+                        ..['_meal']     = selectedMeal
+                        ..['_quantity'] = quantity.toDouble();
 
-                            if (_isSaving) return;
-                            setState(() => _isSaving = true);
+                      debugPrint('[AddFoodScreen] selected food locally: ${food['name']} '
+                          'qty=${quantity}g meal=$selectedMeal cal=${cal.toStringAsFixed(0)}');
 
-                            try {
-                              final payload = buildNutritionPayload(
-                                selectedDate: widget.selectedDate,
-                                mealKey:      selectedMeal,
-                                food:         food,
-                                calories:     cal,
-                                protein:      pro,
-                                carbs:        carbs,
-                                fat:          fat,
-                              );
-
-                              debugPrint('[QuickAdd] payload=$payload');
-
-                              final targetDate =
-                                  widget.selectedDate ?? DateTime.now();
-                              await context
-                                  .read<NutritionProvider>()
-                                  .postNutritionLog(payload,
-                                      selectedDate: targetDate);
-
-                              if (mounted) {
-                                setState(() {
-                                  _addedCount++;
-                                  _loggedItems.add(_LoggedItem(
-                                    id: UniqueKey().toString(),
-                                    food: food,
-                                    quantity: quantity.toDouble(),
-                                  ));
-                                });
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        'Added to ${_capitalize(selectedMeal)}'),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Failed: $e'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            } finally {
-                              if (mounted) setState(() => _isSaving = false);
-                            }
-                          },
+                      // Add to local list — NO network call here.
+                      if (mounted) {
+                        setState(() {
+                          _loggedItems.add(_LoggedItem(
+                            id: UniqueKey().toString(),
+                            food: selectedFood,
+                            quantity: quantity.toDouble(),
+                          ));
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                                'Added to selection — tap Save to log'),
+                            backgroundColor: Colors.blueGrey.shade700,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                      Navigator.pop(ctx);
+                    },
                     style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14)),
                     child: Text(needsMealPicker
-                        ? 'Add to ${_capitalize(selectedMeal)}'
-                        : 'Add to ${_capitalize(widget.initialMeal)}'),
+                        ? 'Select for ${_capitalize(selectedMeal)}'
+                        : 'Select for ${_capitalize(widget.initialMeal)}'),
                   ),
                 ),
               ],
@@ -859,35 +826,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                 : _buildDiscovery(theme),
           ),
 
-          // ── Done bar (appears after first successful add) ──────
-          if (_addedCount > 0)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              color: theme.colorScheme.surface,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.check_circle_outline),
-                label: Text(
-                  'Done — $_addedCount item${_addedCount > 1 ? 's' : ''} added to ${_capitalize(widget.initialMeal)}',
-                ),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF50C878)),
-                onPressed: () {
-                  final p = context.read<NutritionProvider>();
-                  final targetDate = widget.selectedDate ?? DateTime.now();
-                  final now = DateTime.now();
-                  final isToday = targetDate.year == now.year &&
-                      targetDate.month == now.month &&
-                      targetDate.day == now.day;
-                  if (isToday) {
-                    p.loadTodayNutrition();
-                  } else {
-                    p.loadNutritionForDate(
-                        NutritionProvider.dateKey(targetDate));
-                  }
-                  Navigator.pop(context);
-                },
-              ),
-            ),
+          // Done bar removed — Save button in AppBar is now the only exit point.
         ],
       ),
     );
@@ -1082,7 +1021,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                 const Icon(Icons.receipt_long_rounded, color: Colors.blue, size: 16),
                 const SizedBox(width: 6),
                 Text(
-                  'Logged (${_loggedItems.length})',
+                  'Selected (${_loggedItems.length})',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -1259,41 +1198,76 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: () async {
+                    onPressed: _isSaving ? null : () async {
+                      // ── Double-tap guard ────────────────────────────
+                      if (_isSaving) return;
+                      if (mounted) setState(() => _isSaving = true);
                       Navigator.pop(ctx);
+
                       final provider = context.read<NutritionProvider>();
                       final targetDate = widget.selectedDate ?? DateTime.now();
-                      final dateStr =
-                          '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}';
-                      for (final item in List.of(_loggedItems)) {
-                        final body = {
-                          'date':      dateStr,
-                          'food_name': item.name,
-                          'fdc_id':    item.food['fdc_id'],
-                          'meal_name': selectedMeal,
-                          'amount':    item.quantity,
-                          'unit':      'g',
-                          'calories':  item.kcal,
-                          'protein_g': item.protein,
-                          'carbs_g':   item.carbs,
-                          'fat_g':     item.fat,
-                        };
-                        await provider.postNutritionLog(
-                            body, selectedDate: targetDate);
-                      }
-                      if (mounted) {
-                        setState(() => _loggedItems.clear());
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('$selectedMeal saved!'),
-                            backgroundColor: Colors.green.shade700,
-                            behavior: SnackBarBehavior.floating,
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
+                      final itemsToSave = List.of(_loggedItems);
+
+                      debugPrint('[AddFoodScreen] save pressed selectedFoods=${itemsToSave.length}');
+
+                      try {
+                        for (final item in itemsToSave) {
+                          // Prefer the meal stored on the item (set in QuickAdd),
+                          // otherwise fall back to the sheet-level meal picker.
+                          final itemMealKey =
+                              item.food['_meal'] as String? ?? widget.initialMeal;
+                          final payload = buildNutritionPayload(
+                            selectedDate: targetDate,
+                            mealKey: itemMealKey.isNotEmpty ? itemMealKey : selectedMeal.toLowerCase(),
+                            food: item.food,
+                            calories: item.kcal,
+                            protein:  item.protein,
+                            carbs:    item.carbs,
+                            fat:      item.fat,
+                          );
+
+                          debugPrint('[AddFoodScreen] saving ${item.name} payload=$payload');
+                          await provider.postNutritionLog(payload, selectedDate: targetDate);
+                          debugPrint('[AddFoodScreen] saved ${item.name}');
+                        }
+
+                        if (mounted) {
+                          setState(() {
+                            _loggedItems.clear();
+                          });
+                          debugPrint('[AddFoodScreen] save complete, clearing selected foods');
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('$selectedMeal saved!'),
+                              backgroundColor: Colors.green.shade700,
+                              behavior: SnackBarBehavior.floating,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                          Navigator.pop(context);
+                        }
+                      } catch (e) {
+                        debugPrint('[AddFoodScreen] save error: $e');
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to save: $e'),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          // Do NOT clear selectedFoods on error — let user retry
+                        }
+                      } finally {
+                        if (mounted) setState(() => _isSaving = false);
                       }
                     },
-                    child: const Text('Save Meal', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 20, height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save Meal', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
