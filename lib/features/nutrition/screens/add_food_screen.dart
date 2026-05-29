@@ -469,14 +469,17 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                         return;
                       }
 
-                      // Store the meal choice onto the food map so
-                      // _showSaveMealSheet can use it when building payloads.
+                      // Only store _meal when the user has an explicit meal context
+                      // (initialMeal is set). In general Add Food mode (no initialMeal),
+                      // omit _meal so the Save Meal sheet's choice takes priority.
+                      final hasMealContext = widget.initialMeal.trim().isNotEmpty;
                       final selectedFood = Map<String, dynamic>.from(food)
-                        ..['_meal']     = selectedMeal
                         ..['_quantity'] = quantity.toDouble();
+                      if (hasMealContext) selectedFood['_meal'] = selectedMeal;
 
                       debugPrint('[AddFoodScreen] selected food locally: ${food['name']} '
-                          'qty=${quantity}g meal=$selectedMeal cal=${cal.toStringAsFixed(0)}');
+                          'qty=${quantity}g meal=${hasMealContext ? selectedMeal : '(none—chosen at Save)'} '
+                          'cal=${cal.toStringAsFixed(0)}');
 
                       // Add to local list — NO network call here.
                       if (mounted) {
@@ -1166,13 +1169,24 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
 
                       try {
                         for (final item in itemsToSave) {
-                          // Prefer the meal stored on the item (set in QuickAdd),
-                          // otherwise fall back to the sheet-level meal picker.
-                          final itemMealKey =
-                              item.food['_meal'] as String? ?? widget.initialMeal;
+                          // Meal resolution priority:
+                          // 1. widget.initialMeal — set when opened from a specific meal section
+                          // 2. selectedMeal from the Save sheet — the user's explicit choice
+                          // 3. item._meal — only used as last fallback (e.g. barcode add)
+                          final String resolvedMeal;
+                          if (widget.initialMeal.trim().isNotEmpty) {
+                            resolvedMeal = widget.initialMeal.trim();
+                          } else {
+                            // Always respect the sheet picker first;
+                            // item._meal is only a fallback.
+                            resolvedMeal = selectedMeal.isNotEmpty
+                                ? selectedMeal.toLowerCase()
+                                : (item.food['_meal'] as String? ?? 'breakfast');
+                          }
+
                           final payload = buildNutritionPayload(
                             selectedDate: targetDate,
-                            mealKey: itemMealKey.isNotEmpty ? itemMealKey : selectedMeal.toLowerCase(),
+                            mealKey: resolvedMeal,
                             food: item.food,
                             calories: item.kcal,
                             protein:  item.protein,
@@ -1180,7 +1194,10 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                             fat:      item.fat,
                           );
 
-                          debugPrint('[AddFoodScreen] saving ${item.name} payload=$payload');
+                          debugPrint('[AddFoodScreen] saving ${item.name} '
+                              'resolvedMeal=$resolvedMeal '
+                              'itemMeal=${item.food['_meal']} '
+                              'payload=$payload');
                           await provider.postNutritionLog(payload, selectedDate: targetDate);
                           debugPrint('[AddFoodScreen] saved ${item.name}');
                         }

@@ -185,13 +185,16 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
     }
     if (_isSaving) return;
 
-    final mealKey = widget.targetMeal.trim().isEmpty
-        ? 'breakfast'
-        : widget.targetMeal.trim();
+    // In selection mode, mealKey is either the explicit targetMeal or empty.
+    // Do NOT fall back to 'breakfast' here — if targetMeal is empty it means
+    // this screen was opened from general Add Food and the meal will be
+    // decided by the Save Meal sheet in AddFoodScreen.
+    final mealKey = widget.targetMeal.trim();
 
     // ── Selection mode: return payload to AddFoodScreen, no POST ─────────────
     if (widget.selectionMode) {
-      debugPrint('[FoodDetailScreen] selectionMode=true returning food=$_foodName meal=$mealKey');
+      debugPrint('[FoodDetailScreen] selectionMode=true returning food=$_foodName '
+          'meal=${mealKey.isEmpty ? "(none—chosen at Save)" : mealKey}');
       final payload = <String, dynamic>{
         'name':      _foodName,
         'food_name': _foodName,
@@ -200,12 +203,16 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
         'carbs_g':   _carbs,
         'fat_g':     _fat,
         if (_fdcId != null) 'fdc_id': _fdcId,
-        '_meal':     mealKey,
+        // Only include _meal when it was explicitly provided.
+        // Omit it for general Add Food (empty targetMeal) so the
+        // Save sheet choice is not overridden.
+        if (mealKey.isNotEmpty) '_meal': mealKey,
         '_quantity': _quantity.toDouble(),
       };
       Navigator.of(context).pop(payload);
       return;
     }
+
 
     // ── Direct-save mode: POST immediately (used outside AddFoodScreen) ───────
     setState(() => _isSaving = true);
